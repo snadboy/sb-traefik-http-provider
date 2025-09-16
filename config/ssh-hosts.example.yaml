@@ -1,0 +1,33 @@
+# SSH Hosts Configuration Example
+# Copy to ssh-hosts.yaml and update with your hosts
+
+defaults:
+  user: docker
+  port: 22
+  key_file: /app/ssh-keys/id_ssh
+  enabled: true
+
+hosts:
+  # Development environment
+  dev:
+    hostname: host-dev.example.com
+    user: docker
+    port: 22
+    description: Development Docker host
+    enabled: true
+
+  # Production environment
+  prod:
+    hostname: host-prod.example.com
+    user: docker
+    port: 22
+    description: Production Docker host
+    enabled: true
+
+  # Staging environment
+  staging:
+    hostname: 192.168.1.100
+    user: docker
+    port: 2222
+    description: Staging Docker host
+    enabled: false

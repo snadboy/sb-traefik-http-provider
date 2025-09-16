@@ -1,0 +1,21 @@
+# Core dependencies
+snadboy-ssh-docker>=0.1.0
+flask>=2.3.0
+flask-cors>=4.0.0
+pyyaml>=6.0
+asyncio>=3.4.3
+
+# Optional dependencies for enhanced functionality
+gunicorn>=21.2.0  # Production WSGI server
+prometheus-client>=0.19.0  # Metrics support
+redis>=5.0.0  # For caching (optional)
+python-dotenv>=1.0.0  # Environment variable management
+
+# Development dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+debugpy>=1.8.0  # VSCode remote debugging

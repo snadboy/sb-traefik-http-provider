@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Application
+logs/
+*.log
+/var/
+/tmp/
+
+# Configuration (sensitive)
+id_ssh
+id_rsa
+id_ed25519
+*.key
+*.pem
+
+# Docker
+.docker/
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+
+# Environment
+.env
+.env.local
+
+# Development
+*.bak
+*.tmp
+.cache/
+
+# Keep config examples but not actual configs with secrets
+config/ssh-hosts.yaml
+config/provider-config.yaml
+
+# But track example configs
+!config/ssh-hosts.example.yaml
+!config/provider-config.example.yaml

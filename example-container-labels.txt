@@ -1,0 +1,65 @@
+# Example Docker container labels for Traefik discovery
+# Add these labels to your Docker containers to enable Traefik routing
+
+# Basic web service example
+traefik.enable=true
+traefik.http.routers.myapp.rule=Host(`myapp.example.com`)
+traefik.http.services.myapp.loadbalancer.server.port=3000
+
+# Advanced example with middleware
+traefik.enable=true
+traefik.http.routers.api.rule=Host(`api.example.com`) && PathPrefix(`/v1`)
+traefik.http.routers.api.service=api-service
+traefik.http.routers.api.entrypoints=web,websecure
+traefik.http.routers.api.tls=true
+traefik.http.routers.api.tls.certresolver=letsencrypt
+traefik.http.routers.api.middlewares=auth,rate-limit
+
+# Service configuration
+traefik.http.services.api-service.loadbalancer.server.port=8080
+traefik.http.services.api-service.loadbalancer.server.scheme=http
+
+# Middleware configuration
+traefik.http.middlewares.auth.basicauth.users=admin:$$2y$$10$$...
+traefik.http.middlewares.rate-limit.ratelimit.average=100
+traefik.http.middlewares.rate-limit.ratelimit.burst=50
+
+# WordPress example with path stripping
+traefik.enable=true
+traefik.http.routers.wordpress.rule=Host(`blog.example.com`)
+traefik.http.routers.wordpress.entrypoints=websecure
+traefik.http.routers.wordpress.tls=true
+traefik.http.services.wordpress.loadbalancer.server.port=80
+traefik.http.middlewares.wordpress-headers.headers.sslredirect=true
+traefik.http.middlewares.wordpress-headers.headers.stsSeconds=31536000
+traefik.http.routers.wordpress.middlewares=wordpress-headers
+
+# Load balancing with multiple instances
+traefik.enable=true
+traefik.http.routers.webapp.rule=Host(`app.example.com`)
+traefik.http.services.webapp.loadbalancer.server.port=5000
+traefik.http.services.webapp.loadbalancer.sticky.cookie=true
+traefik.http.services.webapp.loadbalancer.sticky.cookie.name=webapp_session
+
+# Microservice with circuit breaker
+traefik.enable=true
+traefik.http.routers.microservice.rule=Host(`service.example.com`)
+traefik.http.services.microservice.loadbalancer.server.port=8000
+traefik.http.middlewares.circuit-breaker.circuitbreaker.expression=ResponseCodeRatio(500, 600, 0, 600) > 0.30
+
+# Static file server with compression
+traefik.enable=true
+traefik.http.routers.static.rule=Host(`static.example.com`)
+traefik.http.services.static.loadbalancer.server.port=80
+traefik.http.middlewares.compress.compress=true
+traefik.http.routers.static.middlewares=compress
+
+# Development service with custom headers
+traefik.enable=true
+traefik.http.routers.dev.rule=Host(`dev.localhost`)
+traefik.http.services.dev.loadbalancer.server.port=3000
+traefik.http.middlewares.dev-cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE
+traefik.http.middlewares.dev-cors.headers.accesscontrolalloworigin=*
+traefik.http.middlewares.dev-cors.headers.accesscontrolmaxage=100
+traefik.http.middlewares.dev-cors.headers.addvaryheader=true
+traefik.http.routers.dev.middlewares=dev-cors

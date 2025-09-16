@@ -1,0 +1,124 @@
+services:
+  # Traefik HTTP Provider Service
+  traefik-provider:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: traefik-http-provider
+    restart: unless-stopped
+    ports:
+      - "8081:8080"  # HTTP provider endpoint
+      - "9090:9090"  # Prometheus metrics (optional)
+      - "5679:5678"  # VSCode debugpy port
+    volumes:
+      - ./config/provider-config.yaml:/app/config/provider-config.yaml:ro
+      - ./config/ssh-hosts.yaml:/app/config/ssh-hosts.yaml:ro
+      - ./id_ssh:/app/ssh-keys/id_ssh:ro  # SSH key for remote Docker hosts
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Optional: local Docker socket
+      - ./logs:/var/log/traefik-provider  # Persistent log storage
+      - ./app:/app/app  # Mount source code for live debugging and editing
+      - ./config:/app/config  # Mount config for live updates
+    environment:
+      - FLASK_ENV=production
+      - LOG_LEVEL=DEBUG
+      - LOG_DIR=/var/log/traefik-provider
+      - LOG_JSON=false  # Set to true for JSON logging
+      - PYTHONUNBUFFERED=1
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.provider.rule=Host(`provider.localhost`)"
+      - "traefik.http.services.provider.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Traefik Instance
+  traefik:
+    image: traefik:v3.2
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--api=true"
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--providers.http.endpoint=http://172.17.0.1:8081/api/traefik/config"
+      - "--providers.http.pollInterval=30s"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+      - "--log.level=INFO"
+      - "--ping"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik dashboard
+    networks:
+      - traefik
+    depends_on:
+      - traefik-provider
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik-dynamic:/etc/traefik/dynamic:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  whoami:
+    image: traefik/whoami
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami.rule=Host(`whoami.isnadboy.com`)"
+      - "traefik.http.routers.whoami.entrypoints=web"
+    networks:
+      - traefik
+    restart: always
+
+  # Test snadboy.revp application
+  test-revp-app:
+    image: nginx:alpine
+    container_name: test-revp-app
+    restart: unless-stopped
+    ports:
+      - "8083:80"
+    networks:
+      - traefik
+    labels:
+      - "snadboy.revp.80.domain=test.isnadboy.com"
+      - "snadboy.revp.80.backend-proto=http"
+      - "snadboy.revp.80.backend-path=/"
+
+# Redis cache (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: traefik-provider-cache
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - traefik
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  traefik:
+    driver: bridge
+    name: traefik
+
+volumes:
+  redis-data:
+    driver: local

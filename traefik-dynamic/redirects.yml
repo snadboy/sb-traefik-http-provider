@@ -1,0 +1,23 @@
+http:
+  routers:
+    unifi-redirect:
+      rule: "Host(`unifi-gateway.isnadboy.com`)"
+      entryPoints:
+        - web
+      middlewares:
+        - unifi-redirect
+      service: noop
+
+  middlewares:
+    unifi-redirect:
+      redirectRegex:
+        regex: "^https?://unifi-gateway.isnadboy.com/(.*)"
+        replacement: "https://host-unifi.isnadboy.com/${1}"
+        permanent: true
+
+  services:
+    # Dummy service for redirects (never actually called)
+    noop:
+      loadBalancer:
+        servers:
+          - url: "http://localhost"

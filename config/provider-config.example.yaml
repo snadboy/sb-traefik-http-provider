@@ -1,0 +1,64 @@
+# Traefik HTTP Provider Configuration Example
+# Copy to provider-config.yaml and customize
+
+# SSH Docker Client Configuration
+ssh_hosts_file: config/ssh-hosts.yaml
+
+# Default host to query if none specified
+default_host: dev
+
+# snadboy.revp label configuration
+label_prefix: snadboy.revp
+
+# TLS configuration
+enable_tls: false
+
+# Default routing rule type (Host, PathPrefix, Path)
+default_rule_type: Host
+
+# Network configuration
+network_mode: bridge
+
+# Refresh interval in seconds
+refresh_interval: 30
+
+# Container discovery filters
+discovery:
+  # Only discover containers with snadboy.revp labels
+  required_labels:
+    - snadboy.revp
+
+  # Exclude containers with these labels
+  exclude_labels:
+    - snadboy.revp.exclude=true
+
+  # Only discover containers in these networks
+  networks:
+    - traefik
+    - web
+    - bridge
+
+# Default service configuration
+service_defaults:
+  port: 80
+  scheme: http
+
+  health_check:
+    enabled: false
+    path: /health
+    interval: 30s
+    timeout: 5s
+
+# Router defaults
+router_defaults:
+  entrypoints:
+    - web
+
+# Advanced configuration
+advanced:
+  debug: false
+  max_concurrent_inspections: 10
+  inspection_timeout: 5
+  cache_ttl: 10
+  metrics_enabled: true
+  metrics_port: 9090

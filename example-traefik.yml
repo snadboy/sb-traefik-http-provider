@@ -1,0 +1,46 @@
+# Example Traefik configuration using the HTTP provider
+# This shows how to configure Traefik to use our HTTP provider
+
+# API and Dashboard
+api:
+  dashboard: true
+  debug: true
+
+# Entry points
+entryPoints:
+  web:
+    address: ":80"
+  
+  websecure:
+    address: ":443"
+
+# Providers configuration
+providers:
+  # Our HTTP provider
+  http:
+    endpoint: "http://traefik-provider:8080/api/traefik/config"
+    pollInterval: 30s
+    
+  # Optional: File provider for static configuration
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+# Logging
+log:
+  level: INFO
+  format: json
+
+accessLog:
+  format: json
+  
+# Metrics (Prometheus)
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    entryPoint: metrics
+    
+# Ping (health check)
+ping:
+  entryPoint: ping
