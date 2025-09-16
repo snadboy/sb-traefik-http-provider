@@ -19,11 +19,11 @@ services:
       - ./app:/app/app  # Mount source code for live debugging and editing
       - ./config:/app/config  # Mount config for live updates
     environment:
-      - FLASK_ENV=production
       - LOG_LEVEL=DEBUG
       - LOG_DIR=/var/log/traefik-provider
       - LOG_JSON=false  # Set to true for JSON logging
       - PYTHONUNBUFFERED=1
+      - WORKERS=2  # Number of uvicorn workers
     networks:
       - traefik
     labels:

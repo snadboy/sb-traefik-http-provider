@@ -1,7 +1,8 @@
 # Core dependencies
 snadboy-ssh-docker>=0.1.0
-flask>=2.3.0
-flask-cors>=4.0.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
 pyyaml>=6.0
 asyncio>=3.4.3
 
