@@ -140,6 +140,54 @@ test-revp-app:
     - "snadboy.revp.80.backend-path=/"
 ```
 
+### Comparison: snadboy.revp vs Traditional Traefik Labels
+
+The simplified `snadboy.revp` labels provide a much cleaner alternative to traditional Traefik labels:
+
+#### Traditional Traefik Labels (Complex)
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.http.routers.myapp.rule=Host(`myapp.example.com`)"
+  - "traefik.http.routers.myapp.service=myapp-service"
+  - "traefik.http.routers.myapp.entrypoints=web"
+  - "traefik.http.services.myapp-service.loadbalancer.server.port=8080"
+  - "traefik.http.services.myapp-service.loadbalancer.server.scheme=http"
+```
+
+#### snadboy.revp Labels (Simple)
+```yaml
+labels:
+  - "snadboy.revp.8080.domain=myapp.example.com"
+  # That's it! backend-proto=http and backend-path=/ are defaults
+```
+
+#### Advanced Traditional Example
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.http.routers.api.rule=Host(`api.example.com`) && PathPrefix(`/v1`)"
+  - "traefik.http.routers.api.service=api-service"
+  - "traefik.http.routers.api.entrypoints=web,websecure"
+  - "traefik.http.routers.api.tls=true"
+  - "traefik.http.services.api-service.loadbalancer.server.port=8080"
+  - "traefik.http.services.api-service.loadbalancer.server.scheme=https"
+```
+
+#### snadboy.revp Equivalent
+```yaml
+labels:
+  - "snadboy.revp.8080.domain=api.example.com"
+  - "snadboy.revp.8080.backend-proto=https"
+  - "snadboy.revp.8080.backend-path=/v1"
+```
+
+**Benefits of snadboy.revp:**
+- 🎯 **Simpler**: 1-3 labels instead of 6+ labels
+- 🚀 **Faster setup**: Less configuration needed
+- 🐛 **Fewer errors**: Less complex syntax to get wrong
+- 📖 **More readable**: Clear, intuitive label names
+
 ## API Endpoints
 
 - `GET /health` - Health check
