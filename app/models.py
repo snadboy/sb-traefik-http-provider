@@ -38,7 +38,10 @@ class TraefikHttp(BaseModel):
     """Traefik HTTP configuration section"""
     routers: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="HTTP routers")
     services: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="HTTP services")
-    middlewares: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="HTTP middlewares")
+    middlewares: Optional[Dict[str, Dict[str, Any]]] = Field(None, description="HTTP middlewares")
+
+    class Config:
+        exclude_none = True
 
 
 class ConfigMetadata(BaseModel):

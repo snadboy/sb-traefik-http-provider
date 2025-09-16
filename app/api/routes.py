@@ -46,7 +46,7 @@ async def health_check() -> HealthResponse:
     )
 
 
-@router.get("/api/traefik/config", response_model=TraefikConfigResponse, responses={
+@router.get("/api/traefik/config", response_model=TraefikConfigResponse, response_model_exclude_none=True, responses={
     400: {"model": ErrorResponse},
     500: {"model": ErrorResponse}
 })

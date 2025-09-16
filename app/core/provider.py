@@ -172,10 +172,13 @@ class TraefikProvider:
         config = {
             'http': {
                 'routers': {},
-                'services': {},
-                'middlewares': {}
+                'services': {}
+                # Don't include empty middlewares - Traefik HTTP provider rejects it
             }
         }
+
+        # Track middlewares separately
+        middlewares = {}
 
         for container_data in containers_data:
             container = container_data.get('container', {})
@@ -255,11 +258,15 @@ class TraefikProvider:
                         }
                     }
 
+        # Only add middlewares to config if we have any
+        if middlewares:
+            config['http']['middlewares'] = middlewares
+
         # Log configuration statistics
         stats = {
             'routers': len(config['http']['routers']),
             'services': len(config['http']['services']),
-            'middlewares': len(config['http']['middlewares'])
+            'middlewares': len(middlewares)
         }
 
         logger.info(f"Configuration built: {stats['routers']} routers, {stats['services']} services, {stats['middlewares']} middlewares")
