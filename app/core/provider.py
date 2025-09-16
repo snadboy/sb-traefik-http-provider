@@ -50,7 +50,7 @@ class TraefikProvider:
         """Initialize SSH Docker client"""
         try:
             ssh_hosts_file = self.config.get('ssh_hosts_file', 'config/ssh-hosts.yaml')
-            ssh_hosts_path = Path(ssh_hosts_file)
+            ssh_hosts_path = Path(ssh_hosts_file).resolve()
             self.ssh_client = SSHDockerClient(config_file=ssh_hosts_path)
             logger.info("SSH Docker client initialized successfully")
         except Exception as e:
