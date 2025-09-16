@@ -1,16 +1,19 @@
 # Traefik HTTP Provider with snadboy-ssh-docker
 
-A Python-based HTTP provider for Traefik that discovers Docker containers across multiple SSH-accessible hosts using the snadboy-ssh-docker library. Uses simplified `snadboy.revp` labels instead of complex Traefik label syntax.
+A high-performance FastAPI-based HTTP provider for Traefik that discovers Docker containers across multiple SSH-accessible hosts using the snadboy-ssh-docker library. Uses simplified `snadboy.revp` labels instead of complex Traefik label syntax.
 
 ## Features
 
 - **Multi-host Docker Discovery**: Discover containers across multiple Docker hosts via SSH
 - **Dynamic Configuration**: Automatically generate Traefik routing configuration from container labels
 - **Simplified Label Syntax**: Uses `snadboy.revp` labels for easier container configuration
+- **FastAPI Framework**: Native async/await support with automatic API documentation
+- **Type Safety**: Pydantic models for request/response validation
 - **Health Checks**: Endpoints for monitoring provider health
 - **Caching Support**: Optional Redis caching for improved performance
 - **Prometheus Metrics**: Export metrics for monitoring
 - **VSCode Remote Debugging**: Full debugging support with minimal overhead
+- **Auto-generated Documentation**: Interactive API docs at `/docs` and `/redoc`
 
 ## Quick Start
 
@@ -68,6 +71,7 @@ This will start:
 ### 4. Access Services
 
 - Provider API: http://localhost:8081/api/traefik/config
+- API Documentation: http://localhost:8081/docs
 - Traefik Dashboard: http://localhost:8080
 - Test App: http://test.isnadboy.com
 
@@ -97,7 +101,9 @@ test-revp-app:
 - `GET /health` - Health check
 - `GET /api/traefik/config` - Get Traefik configuration
 - `GET /api/containers` - List discovered containers (debug)
-- `GET /api/config` - Get provider configuration
+- `GET /docs` - Interactive Swagger UI documentation
+- `GET /redoc` - Alternative ReDoc documentation
+- `GET /openapi.json` - OpenAPI specification
 
 ## Development
 
@@ -106,9 +112,10 @@ test-revp-app:
 ```
 traekik/
 ├── app/
-│   ├── api/           # Flask API routes
+│   ├── api/           # FastAPI routes
 │   ├── core/          # Core provider logic
-│   └── main.py        # Application entry point
+│   ├── models.py      # Pydantic models
+│   └── main.py        # FastAPI application
 ├── config/            # Configuration files
 ├── docker/            # Docker files
 └── compose.yml        # Docker Compose setup
@@ -124,6 +131,12 @@ pip install -r requirements.txt
 
 ```bash
 python app/main.py
+```
+
+Or with uvicorn:
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 ### Debug with VSCode
@@ -145,18 +158,25 @@ docker-compose run --rm --service-ports traefik-provider debug
 ```
 ┌─────────────────┐     SSH      ┌──────────────┐
 │                 ├─────────────► │ Docker Host1 │
-│  HTTP Provider  │               └──────────────┘
-│                 │     SSH      ┌──────────────┐
+│ FastAPI Provider│               └──────────────┘
+│   (Async)       │     SSH      ┌──────────────┐
 │                 ├─────────────► │ Docker Host2 │
 └────────┬────────┘               └──────────────┘
          │
-         │ HTTP
+         │ HTTP (Async)
          │ /api/traefik/config
          ▼
    ┌──────────┐
    │ Traefik  │
    └──────────┘
 ```
+
+### Technology Stack
+
+- **FastAPI**: Modern async web framework with automatic API documentation
+- **Uvicorn**: Lightning-fast ASGI server
+- **Pydantic**: Data validation using Python type annotations
+- **snadboy-ssh-docker**: SSH-based Docker client for remote container management
 
 ## Configuration Options
 

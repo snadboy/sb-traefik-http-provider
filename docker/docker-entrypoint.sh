@@ -32,29 +32,14 @@ case "${1}" in
         echo "JSON logging: ${LOG_JSON}"
         echo "Debug port: 5678 (waiting for VSCode to attach)"
         export PYDEVD_DISABLE_FILE_VALIDATION=1
-        exec python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 --wait-for-client app/fastapi_main.py
+        exec python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 --wait-for-client app/main.py
         ;;
     "dev"|"development")
         echo "Starting in development mode with FastAPI..."
         echo "Log directory: ${LOG_DIR}"
         echo "Log level: ${LOG_LEVEL}"
         echo "JSON logging: ${LOG_JSON}"
-        exec python app/fastapi_main.py --reload --log-level ${LOG_LEVEL:-DEBUG}
-        ;;
-    "flask")
-        echo "Starting in Flask mode (legacy)..."
-        echo "Log directory: ${LOG_DIR}"
-        echo "Log level: ${LOG_LEVEL}"
-        echo "JSON logging: ${LOG_JSON}"
-        exec gunicorn \
-            --bind 0.0.0.0:8080 \
-            --workers ${WORKERS:-2} \
-            --threads ${THREADS:-1} \
-            --timeout ${TIMEOUT:-120} \
-            --access-logfile - \
-            --error-logfile - \
-            --log-level ${LOG_LEVEL:-info} \
-            app.main:app
+        exec python app/main.py --reload --log-level ${LOG_LEVEL:-DEBUG}
         ;;
     "shell")
         echo "Starting shell..."
@@ -70,7 +55,7 @@ case "${1}" in
         # Convert log level to lowercase for uvicorn
         UVICORN_LOG_LEVEL=$(echo ${LOG_LEVEL:-info} | tr '[:upper:]' '[:lower:]')
         exec uvicorn \
-            app.fastapi_main:app \
+            app.main:app \
             --host 0.0.0.0 \
             --port 8080 \
             --workers ${WORKERS:-2} \
