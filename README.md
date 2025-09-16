@@ -10,7 +10,7 @@ A high-performance FastAPI-based HTTP provider for Traefik that discovers Docker
 - **FastAPI Framework**: Native async/await support with automatic API documentation
 - **Type Safety**: Pydantic models for request/response validation
 - **Health Checks**: Endpoints for monitoring provider health
-- **Caching Support**: Optional Redis caching for improved performance
+- **Real-time Monitoring**: SSHDockerClient monitors Docker events continuously
 - **Prometheus Metrics**: Export metrics for monitoring
 - **VSCode Remote Debugging**: Full debugging support with minimal overhead
 - **Auto-generated Documentation**: Interactive API docs at `/docs` and `/redoc`
@@ -64,9 +64,9 @@ docker-compose up -d
 ```
 
 This will start:
-- The HTTP provider on port 8080
+- The HTTP provider on port 8081
 - Traefik on ports 80/443
-- An example Nginx container
+- Example containers (whoami, test-revp-app)
 
 ### 4. Access Services
 

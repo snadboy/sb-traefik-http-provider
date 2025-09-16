@@ -27,9 +27,12 @@ services:
     networks:
       - traefik
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.provider.rule=Host(`provider.localhost`)"
-      - "traefik.http.services.provider.loadbalancer.server.port=8080"
+      - "snadboy.revp.8080.domain=traefik-provider-api.isnadboy.com"
+      - "snadboy.revp.9090.domain=traefik-provider-metrics.isnadboy.com"
+      - "snadboy.revp.5679.domain=traefik-provider-vscode-debug.isnadboy.com"
+      # - "traefik.enable=true"
+      # - "traefik.http.routers.provider.rule=Host(`provider.localhost`)"
+      # - "traefik.http.services.provider.loadbalancer.server.port=8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -56,6 +59,7 @@ services:
       - "--providers.file.watch=true"
       - "--log.level=INFO"
       - "--ping"
+      - "snadboy.revp.8080.domain=traefik-dashboard.isnadboy.com"
     ports:
       - "80:80"
       - "443:443"
@@ -77,9 +81,10 @@ services:
   whoami:
     image: traefik/whoami
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.whoami.rule=Host(`whoami.localhost`)"
-      - "traefik.http.routers.whoami.entrypoints=web"
+      # - "traefik.enable=true"
+      # - "traefik.http.routers.whoami.rule=Host(`whoami.localhost`)"
+      # - "traefik.http.routers.whoami.entrypoints=web"
+      - "snadboy.revp.80.domain=traefik-whoami.isnadboy.com"
     networks:
       - traefik
     restart: always
@@ -98,27 +103,7 @@ services:
       - "snadboy.revp.80.backend-proto=http"
       - "snadboy.revp.80.backend-path=/"
 
-# Redis cache (optional)
-  redis:
-    image: redis:7-alpine
-    container_name: traefik-provider-cache
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    volumes:
-      - redis-data:/data
-    networks:
-      - traefik
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
 networks:
   traefik:
     driver: bridge
     name: traefik
-
-volumes:
-  redis-data:
-    driver: local
