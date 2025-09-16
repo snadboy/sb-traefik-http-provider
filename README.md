@@ -77,16 +77,60 @@ This will start:
 
 ## Container Labels
 
-Add these simplified snadboy.revp labels to your containers:
+The provider uses simplified `snadboy.revp.{PORT}.{SETTING}` labels for automatic Traefik configuration.
 
+### Required Labels
+
+- **`snadboy.revp.{PORT}.domain`** - The domain for accessing the service
+  - Example: `snadboy.revp.80.domain=myapp.example.com`
+
+### Optional Labels (with defaults)
+
+- **`snadboy.revp.{PORT}.backend-proto`** - Backend protocol
+  - **Default:** `http`
+  - **Options:** `http`, `https`
+  - Example: `snadboy.revp.80.backend-proto=https`
+
+- **`snadboy.revp.{PORT}.backend-path`** - Backend path
+  - **Default:** `/`
+  - Example: `snadboy.revp.80.backend-path=/api/v1`
+
+### Label Format
+
+```
+snadboy.revp.{INTERNAL_PORT}.{SETTING}={VALUE}
+```
+
+- **`{INTERNAL_PORT}`**: Container's internal port (e.g., `80`, `8080`, `3000`)
+- **`{SETTING}`**: Configuration setting (`domain`, `backend-proto`, `backend-path`)
+- **`{VALUE}`**: Setting value
+
+### Examples
+
+#### Basic Web Application
 ```yaml
 labels:
   - "snadboy.revp.80.domain=myapp.example.com"
-  - "snadboy.revp.80.backend-proto=http"
-  - "snadboy.revp.80.backend-path=/"
+  # Uses defaults: backend-proto=http, backend-path=/
 ```
 
-Example from compose.yml:
+#### API with Custom Path
+```yaml
+labels:
+  - "snadboy.revp.8080.domain=api.example.com"
+  - "snadboy.revp.8080.backend-path=/api/v1"
+  - "snadboy.revp.8080.backend-proto=https"
+```
+
+#### Multiple Ports
+```yaml
+labels:
+  - "snadboy.revp.80.domain=app.example.com"
+  - "snadboy.revp.9090.domain=metrics.example.com"
+  - "snadboy.revp.9090.backend-path=/metrics"
+```
+
+#### Complete Example from compose.yml
 ```yaml
 test-revp-app:
   image: nginx:alpine
@@ -176,6 +220,82 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 - You can edit code while debugging (live reload)
 - Use `docker-compose logs traefik-provider` to see container output
 - Set breakpoints in key functions like `generate_config` for inspection
+
+## Logging
+
+The provider includes comprehensive logging with console and file output, structured logging support, and automatic log rotation.
+
+### Log Files
+
+When using Docker Compose, logs are stored in `./logs/`:
+
+- **app.log** - Main application log with all messages
+- **error.log** - Error messages only (ERROR level and above)
+- **access.log** - HTTP request/response logs
+- **audit.log** - Security and configuration change audit trail
+
+### Configuration
+
+#### Environment Variables
+```bash
+LOG_LEVEL=INFO          # Log level: DEBUG, INFO, WARNING, ERROR
+LOG_DIR=/var/log/traefik-provider  # Log directory
+LOG_JSON=false          # Enable JSON structured logging
+```
+
+#### Docker Compose
+```yaml
+environment:
+  - LOG_LEVEL=DEBUG     # More verbose logging
+  - LOG_JSON=true       # JSON format for log aggregation
+```
+
+### Log Levels
+
+- **DEBUG**: Container discovery details, label parsing, configuration steps
+- **INFO**: Successful operations, configuration statistics, request handling
+- **WARNING**: Missing files, failed requests, deprecated features
+- **ERROR**: Connection failures, invalid configurations, exceptions
+
+### Viewing Logs
+
+```bash
+# Real-time console output
+docker-compose logs -f traefik-provider
+
+# File logs
+tail -f logs/app.log
+tail -f logs/error.log
+
+# Filter by level
+grep "ERROR" logs/app.log
+
+# JSON logs with jq
+cat logs/app.log | jq '.'
+```
+
+### Log Rotation
+
+Logs are automatically rotated:
+- **app.log**: Daily, keep 14 days
+- **access.log**: Hourly, keep 48 hours
+- **error.log**: Daily, keep 30 days
+- **audit.log**: Weekly, keep 1 year
+
+### Structured Logging (JSON)
+
+Enable with `LOG_JSON=true` for log aggregation systems:
+
+```json
+{
+  "timestamp": "2025-01-15T10:30:45.123456",
+  "level": "INFO",
+  "logger": "traefik-provider",
+  "message": "Configuration generated",
+  "container_count": 15,
+  "duration_seconds": 2.34
+}
+```
 
 ## Architecture
 
