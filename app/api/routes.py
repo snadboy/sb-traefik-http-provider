@@ -129,22 +129,57 @@ async def list_containers(
         target_host = host or provider.config.get('default_host')
         logger.info(f"Returning {len(containers)} containers from {target_host}")
 
-        # Convert to Pydantic models
-        container_models = [
-            ContainerInfo(
+        # Convert to Pydantic models with proper data type handling
+        container_models = []
+        for c in containers:
+            # Handle Labels - convert string to dict if needed
+            labels = c.get('Labels', {})
+            if isinstance(labels, str):
+                # Parse comma-separated labels into dict
+                labels_dict = {}
+                if labels:
+                    for label_pair in labels.split(','):
+                        if '=' in label_pair:
+                            key, value = label_pair.split('=', 1)
+                            labels_dict[key.strip()] = value.strip()
+                labels = labels_dict
+            elif not isinstance(labels, dict):
+                labels = {}
+
+            # Handle Ports - convert string to list if needed
+            ports = c.get('Ports', [])
+            if isinstance(ports, str):
+                # Parse port string into list
+                ports_list = []
+                if ports:
+                    port_entries = ports.split(', ')
+                    for port_entry in port_entries:
+                        ports_list.append({"port_mapping": port_entry.strip()})
+                ports = ports_list
+            elif not isinstance(ports, list):
+                ports = []
+
+            # Handle Networks - ensure it's a list
+            networks = c.get('Networks', {})
+            if isinstance(networks, dict):
+                networks = list(networks.keys())
+            elif isinstance(networks, str):
+                networks = [networks] if networks else []
+            elif not isinstance(networks, list):
+                networks = []
+
+            container_models.append(ContainerInfo(
                 ID=c.get('ID', ''),
                 Name=c.get('Names', c.get('Name', '')),
                 Image=c.get('Image', ''),
                 Status=c.get('Status', ''),
                 State=c.get('State', 'unknown'),
-                Labels=c.get('Labels', {}),
-                Networks=list(c.get('Networks', {}).keys()) if isinstance(c.get('Networks'), dict) else [],
-                Ports=c.get('Ports', []),
+                Labels=labels,
+                Networks=networks,
+                Ports=ports,
                 Created=c.get('Created'),
                 host=target_host
-            )
-            for c in containers
-        ]
+            ))
 
         return ContainerListResponse(
             containers=container_models,
