@@ -78,7 +78,7 @@ services:
     image: traefik/whoami
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.whoami.rule=Host(`whoami.isnadboy.com`)"
+      - "traefik.http.routers.whoami.rule=Host(`whoami.localhost`)"
       - "traefik.http.routers.whoami.entrypoints=web"
     networks:
       - traefik
@@ -94,7 +94,7 @@ services:
     networks:
       - traefik
     labels:
-      - "snadboy.revp.80.domain=test.isnadboy.com"
+      - "snadboy.revp.80.domain=test.localhost"
       - "snadboy.revp.80.backend-proto=http"
       - "snadboy.revp.80.backend-path=/"
 

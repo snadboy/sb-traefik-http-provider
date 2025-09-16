@@ -73,7 +73,7 @@ This will start:
 - Provider API: http://localhost:8081/api/traefik/config
 - API Documentation: http://localhost:8081/docs
 - Traefik Dashboard: http://localhost:8080
-- Test App: http://test.isnadboy.com
+- Test App: http://test.localhost (or configure your own domain)
 
 ## Container Labels
 
@@ -91,7 +91,7 @@ Example from compose.yml:
 test-revp-app:
   image: nginx:alpine
   labels:
-    - "snadboy.revp.80.domain=test.isnadboy.com"
+    - "snadboy.revp.80.domain=test.localhost"
     - "snadboy.revp.80.backend-proto=http"
     - "snadboy.revp.80.backend-path=/"
 ```
