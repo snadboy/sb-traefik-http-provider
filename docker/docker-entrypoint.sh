@@ -4,19 +4,19 @@
 set -e
 
 # Create log directory if it doesn't exist
-mkdir -p ${LOG_DIR:-/var/log/traefik-provider}
+mkdir -p ${LOG_DIR:-/var/log/sb-traefik-provider}
 
 # Set up logrotate if config exists
 if [ -f /app/config/logrotate.conf ]; then
     echo "Setting up log rotation..."
-    cp /app/config/logrotate.conf /etc/logrotate.d/traefik-provider
+    cp /app/config/logrotate.conf /etc/logrotate.d/sb-traefik-provider
     
     # Create logrotate state file
     touch /var/lib/logrotate/status
     
     # Run logrotate in background
     (while true; do
-        logrotate /etc/logrotate.d/traefik-provider
+        logrotate /etc/logrotate.d/sb-traefik-provider
         sleep 3600  # Check every hour
     done) &
     

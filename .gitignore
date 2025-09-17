@@ -57,7 +57,14 @@ acme.json
 # Keep config examples but not actual configs with secrets
 config/ssh-hosts.yaml
 config/provider-config.yaml
+config/static-routes.yaml
 
 # But track example configs
 !config/ssh-hosts.example.yaml
 !config/provider-config.example.yaml
+!config/static-routes.example.yaml
+
+# Traefik runtime
+traefik-dynamic/*.yml
+!traefik-dynamic/wildcard-cert.yml.example
+!traefik-dynamic/redirects.yml.example

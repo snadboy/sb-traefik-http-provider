@@ -1,0 +1,73 @@
+# Multi-stage build for optimized production image
+# Build stage
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python dependencies
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim
+
+# Add labels for metadata
+LABEL maintainer="snadboy" \
+      org.label-schema.name="sb-traefik-http-provider" \
+      org.label-schema.description="HTTP provider for Traefik with SSH Docker discovery" \
+      org.label-schema.url="https://github.com/snadboy/sb-traefik-http-provider" \
+      org.label-schema.vcs-url="https://github.com/snadboy/sb-traefik-http-provider" \
+      org.label-schema.vendor="snadboy" \
+      org.label-schema.schema-version="1.0"
+
+WORKDIR /app
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    openssh-client \
+    curl \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy Python packages from builder
+COPY --from=builder /root/.local /root/.local
+
+# Copy application code
+COPY app/ ./app/
+
+# Copy entrypoint script
+COPY docker/docker-entrypoint.sh /entrypoint.sh
+
+# Create necessary directories
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh && \
+    mkdir -p /var/log/sb-traefik-provider && \
+    chmod 755 /var/log/sb-traefik-provider && \
+    chmod +x /entrypoint.sh
+
+# Create non-root user for better security (optional)
+# RUN useradd -m -u 1000 -s /bin/bash provider && \
+#     chown -R provider:provider /app /var/log/sb-traefik-provider
+
+# Expose ports
+EXPOSE 8080 9090
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Environment variables
+ENV LOG_DIR=/var/log/sb-traefik-provider \
+    LOG_LEVEL=INFO \
+    PYTHONUNBUFFERED=1 \
+    PATH=/root/.local/bin:$PATH
+
+# USER provider  # Uncomment if using non-root user
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["production"]

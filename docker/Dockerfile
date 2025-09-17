@@ -29,8 +29,8 @@ COPY docker/docker-entrypoint.sh /entrypoint.sh
 
 # Create directories for SSH keys and logs, make entrypoint executable
 RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh && \
-    mkdir -p /var/log/traefik-provider && \
-    chmod 755 /var/log/traefik-provider && \
+    mkdir -p /var/log/sb-traefik-provider && \
+    chmod 755 /var/log/sb-traefik-provider && \
     chmod +x /entrypoint.sh
 
 # Expose port
@@ -41,7 +41,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # Set environment variables for logging
-ENV LOG_DIR=/var/log/traefik-provider \
+ENV LOG_DIR=/var/log/sb-traefik-provider \
     LOG_LEVEL=INFO \
     PYTHONUNBUFFERED=1
 

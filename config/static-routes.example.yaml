@@ -1,36 +1,26 @@
-# Static Routes Configuration
-# Define routes to services outside of Docker containers
+# Static routes for non-Docker services
+# These routes are for services running outside of Docker containers
 
 static_routes:
-  # Example: UniFi Network Gateway
-  - domain: unifi-gateway.isnadboy.com
-    target: https://192.168.86.78:8006
-    description: "UniFi Network Gateway Management Interface"
-    https: true          # Optional: Enable HTTPS (default: true)
-    redirect-https: true # Optional: Redirect HTTP to HTTPS (default: true)
+  # Example: Network gateway device
+  - domain: gateway.example.com
+    target: https://192.168.1.1
+    description: "Network Gateway"
+    https: true          # Enable HTTPS (default: true)
+    redirect-https: true # HTTP→HTTPS redirect (default: true)
 
-  # Example: Proxmox Virtual Environment
-  - domain: proxmox.isnadboy.com
+  # Example: Proxmox server
+  - domain: proxmox.example.com
     target: https://192.168.1.100:8006
     description: "Proxmox Virtual Environment"
-    https: true
-    redirect-https: true
 
-  # Example: HTTP-only internal service
-  - domain: internal-api.isnadboy.com
+  # Example: Internal API (HTTP only)
+  - domain: internal-api.example.com
     target: http://192.168.1.200:8080
     description: "Internal API Server"
-    https: false         # No HTTPS for this service
+    https: false         # HTTP only, no HTTPS
 
   # Example: Service with custom path
-  - domain: monitoring.isnadboy.com
-    target: http://192.168.1.50:3000/grafana
-    description: "Grafana Monitoring Dashboard"
-    https: true
-    redirect-https: true
-
-# Configuration notes:
-# - All domains will use the wildcard certificate (*.isnadboy.com)
-# - Target can be any HTTP/HTTPS URL with IP or hostname
-# - HTTPS and redirect-https follow same defaults as container services
-# - Description is optional but recommended for documentation
+  - domain: grafana.example.com
+    target: https://192.168.1.50:3000/grafana
+    description: "Grafana Dashboard"

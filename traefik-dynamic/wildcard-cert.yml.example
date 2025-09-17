@@ -1,0 +1,25 @@
+# Wildcard certificate trigger for your domain
+# This router triggers the generation of a wildcard certificate
+
+http:
+  routers:
+    # Simple router that triggers wildcard certificate generation
+    wildcard-trigger:
+      rule: "Host(`example.com`)"
+      service: noop-service
+      priority: 1  # Low priority
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "example.com"
+            sans:
+              - "*.example.com"
+
+  services:
+    # Dummy service for the trigger router
+    noop-service:
+      loadBalancer:
+        servers:
+          - url: "http://localhost:8080"  # Point to Traefik dashboard

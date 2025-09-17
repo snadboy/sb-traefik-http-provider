@@ -4,7 +4,22 @@
 static_routes:
   # UniFi Network Gateway
   - domain: unifi-gateway.isnadboy.com
-    target: https://192.168.86.78:8006
+    target: https://192.168.86.1:8006
     description: "UniFi Network Gateway Management Interface"
+    https: true
+    redirect-https: true
+  - domain: colossus.isnadboy.com
+    target: https://host-colossus.isnadboy.com:8006
+    description: Proxmox node - Colossus
+    https: true
+    redirect-https: true
+  - domain: guardian.isnadboy.com
+    target: https://host-guardian.isnadboy.com:8006
+    description: Proxmox node - Guardian
+    https: true
+    redirect-https: true
+  - domain: ns.isnadboy.com
+    target: http://host-ns.isnadboy.com:5380
+    description: Internal DNS Server
     https: true
     redirect-https: true

@@ -1,4 +1,4 @@
-# Traefik HTTP Provider with snadboy-ssh-docker
+# SB Traefik HTTP Provider
 
 A high-performance FastAPI-based HTTP provider for Traefik that discovers Docker containers across multiple SSH-accessible hosts using the snadboy-ssh-docker library. Uses simplified `snadboy.revp` labels instead of complex Traefik label syntax.
 
@@ -412,7 +412,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 
 1. **Start container in debug mode:**
    ```bash
-   docker-compose run --rm --service-ports traefik-provider debug
+   docker-compose run --rm --service-ports sb-traefik-http-provider debug
    ```
 
 2. **In VSCode:**
@@ -441,7 +441,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 
 - Container will wait for debugger to attach before starting
 - You can edit code while debugging (live reload)
-- Use `docker-compose logs traefik-provider` to see container output
+- Use `docker-compose logs sb-traefik-http-provider` to see container output
 - Set breakpoints in key functions like `generate_config` for inspection
 
 ## Logging

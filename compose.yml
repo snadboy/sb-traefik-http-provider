@@ -1,10 +1,10 @@
 services:
-  # Traefik HTTP Provider Service
-  traefik-provider:
+  # SB Traefik HTTP Provider Service
+  sb-traefik-http-provider:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: traefik-http-provider
+    container_name: sb-traefik-http-provider
     restart: unless-stopped
     ports:
       - "8081:8080"  # HTTP provider endpoint
@@ -15,21 +15,21 @@ services:
       - ./config/ssh-hosts.yaml:/app/config/ssh-hosts.yaml:ro
       - ./id_ssh:/app/ssh-keys/id_ssh:ro  # SSH key for remote Docker hosts
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Optional: local Docker socket
-      - ./logs:/var/log/traefik-provider  # Persistent log storage
+      - ./logs:/var/log/sb-traefik-provider  # Persistent log storage
       - ./app:/app/app  # Mount source code for live debugging and editing
       - ./config:/app/config  # Mount config for live updates
     environment:
       - LOG_LEVEL=DEBUG
-      - LOG_DIR=/var/log/traefik-provider
+      - LOG_DIR=/var/log/sb-traefik-provider
       - LOG_JSON=false  # Set to true for JSON logging
       - PYTHONUNBUFFERED=1
       - WORKERS=2  # Number of uvicorn workers
     networks:
       - traefik
     labels:
-      - "snadboy.revp.8080.domain=traefik-provider-api.isnadboy.com"
-      - "snadboy.revp.9090.domain=traefik-provider-metrics.isnadboy.com"
-      - "snadboy.revp.5679.domain=traefik-provider-vscode-debug.isnadboy.com"
+      - "snadboy.revp.8080.domain=sb-traefik-provider-api.isnadboy.com"
+      - "snadboy.revp.9090.domain=sb-traefik-provider-metrics.isnadboy.com"
+      - "snadboy.revp.5679.domain=sb-traefik-provider-vscode-debug.isnadboy.com"
       # - "traefik.enable=true"
       # - "traefik.http.routers.provider.rule=Host(`provider.localhost`)"
       # - "traefik.http.services.provider.loadbalancer.server.port=8080"
@@ -75,7 +75,7 @@ services:
     networks:
       - traefik
     depends_on:
-      - traefik-provider
+      - sb-traefik-http-provider
     env_file:
       - .env  # Contains CF_DNS_API_TOKEN
     volumes:

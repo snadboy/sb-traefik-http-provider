@@ -1,0 +1,5 @@
+theme: jekyll-theme-minimal
+title: SB Traefik HTTP Provider
+description: HTTP provider for Traefik with SSH Docker discovery and simplified labels
+show_downloads: true
+google_analytics:
