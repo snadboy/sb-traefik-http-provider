@@ -1,13 +1,15 @@
-# Wildcard certificate configuration for isnadboy.com
-# This requests a single wildcard certificate that covers all subdomains
+# Wildcard certificate trigger for isnadboy.com
+# This router triggers the generation of a wildcard certificate
 
 http:
   routers:
-    # Catch-all router to trigger wildcard certificate generation
-    wildcard-cert-router:
-      rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.isnadboy.com`)"
+    # Simple router that triggers wildcard certificate generation
+    wildcard-trigger:
+      rule: "Host(`isnadboy.com`)"
       service: noop-service
-      priority: 1  # Low priority so specific routers take precedence
+      priority: 1  # Low priority
+      entryPoints:
+        - websecure
       tls:
         certResolver: letsencrypt
         domains:
@@ -16,8 +18,8 @@ http:
               - "*.isnadboy.com"
 
   services:
-    # Dummy service for the wildcard router
+    # Dummy service for the trigger router
     noop-service:
       loadBalancer:
         servers:
-          - url: "http://localhost"
+          - url: "http://localhost:8080"  # Point to Traefik dashboard
