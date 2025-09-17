@@ -45,6 +45,10 @@ htmlcov/
 .env
 .env.local
 
+# Let's Encrypt
+letsencrypt/
+acme.json
+
 # Development
 *.bak
 *.tmp

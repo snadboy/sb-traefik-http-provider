@@ -244,20 +244,49 @@ labels:
 
 ## Let's Encrypt Configuration
 
-The provider automatically configures Let's Encrypt for SSL certificates. By default, it uses **staging** certificates for testing. To use production certificates, update your compose.yml:
+The provider uses **Cloudflare DNS challenge** for Let's Encrypt SSL certificates. This method works behind firewalls, doesn't require port 80, and can issue wildcard certificates.
 
-```yaml
-# For production (in compose.yml):
-- "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
+### Setup
 
-# For staging/testing (default):
-- "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
-```
+1. **Create Cloudflare API Token**:
+   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens)
+   - Create token with permissions:
+     - `Zone:DNS:Edit`
+     - `Zone:Zone:Read`
+   - Include all zones or specifically your domain
 
-**Important**:
-- Update the email address in compose.yml: `your-email@example.com`
-- Let's Encrypt has rate limits: 50 certificates per domain per week
-- Always test with staging first to avoid hitting rate limits
+2. **Configure API Token**:
+   ```bash
+   # Copy the example file
+   cp .env.example .env
+
+   # Edit .env and add your token
+   CF_DNS_API_TOKEN=your-actual-cloudflare-api-token
+   ```
+
+3. **Update Email in compose.yml**:
+   Replace `your-email@example.com` with your actual email address
+
+4. **Switch to Production** (after testing):
+   ```yaml
+   # For production (in compose.yml):
+   - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
+
+   # For staging/testing (default):
+   - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+   ```
+
+### Benefits of DNS Challenge
+- ✅ Works behind firewalls/NAT
+- ✅ No need for port 80 to be open
+- ✅ Can issue wildcard certificates (`*.isnadboy.com`)
+- ✅ Works while migrating from other reverse proxies
+
+### Important Notes
+- **Never commit .env file** - It contains your API token
+- Let's Encrypt rate limits: 50 certificates per domain per week
+- Always test with staging server first
+- Certificates auto-renew 30 days before expiration
 
 ## API Endpoints
 
