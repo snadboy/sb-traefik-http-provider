@@ -15,7 +15,61 @@ A high-performance FastAPI-based HTTP provider for Traefik that discovers Docker
 - **VSCode Remote Debugging**: Full debugging support with minimal overhead
 - **Auto-generated Documentation**: Interactive API docs at `/docs` and `/redoc`
 
-## Quick Start
+## Quick Deploy (Production)
+
+Deploy the published Docker image in minutes:
+
+### 1. Download Example Configuration
+
+```bash
+# Download the deployment example
+wget https://github.com/snadboy/sb-traefik-http-provider/archive/refs/heads/main.zip
+unzip main.zip
+cd sb-traefik-http-provider-main/examples/
+
+# Or clone the repository
+git clone https://github.com/snadboy/sb-traefik-http-provider.git
+cd sb-traefik-http-provider/examples/
+```
+
+### 2. Set Up Configuration
+
+```bash
+# Create required directories
+mkdir -p config ssh-keys traefik-dynamic logs
+
+# Copy and customize configuration files
+cp ../config/*.example.yaml config/
+cp ../traefik-dynamic/*.example.yml traefik-dynamic/
+cp ../.env.example .env
+
+# Edit configurations for your setup
+nano config/ssh-hosts.yaml     # Define your Docker hosts
+nano .env                       # Add Cloudflare API token
+nano docker-compose.yml        # Update domain names
+```
+
+### 3. Deploy
+
+```bash
+docker-compose up -d
+```
+
+### 4. Verify
+
+```bash
+# Check provider health
+curl http://localhost:8081/health
+
+# View configuration
+curl http://localhost:8081/api/traefik/config
+```
+
+That's it! Your containers with `snadboy.revp` labels will now be automatically routed with HTTPS.
+
+## Development Setup
+
+For development or building from source:
 
 ### 1. Configure SSH Hosts
 

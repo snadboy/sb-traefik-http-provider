@@ -68,11 +68,11 @@ labels:
 
 ## Documentation
 
-- [Installation Guide](installation.md)
-- [Configuration Reference](configuration.md)
-- [Label Documentation](labels.md)
-- [API Reference](api.md)
-- [Troubleshooting](troubleshooting.md)
+- [Installation Guide](installation.md) - Complete deployment instructions
+- [Configuration Reference](configuration.md) - All configuration options
+- [Label Documentation](labels.md) - Container labeling guide
+- [API Reference](api.md) - REST API documentation
+- [Troubleshooting](troubleshooting.md) - Common issues and solutions
 
 ## Links
 
