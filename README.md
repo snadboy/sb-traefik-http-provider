@@ -107,10 +107,6 @@ The provider uses simplified `snadboy.revp.{PORT}.{SETTING}` labels for automati
   - **Options:** `true`, `false`
   - Example: `snadboy.revp.80.redirect-https=false` (allow both HTTP and HTTPS)
 
-- **`snadboy.revp.{PORT}.https-certresolver`** - Certificate resolver to use
-  - **Default:** `letsencrypt`
-  - Example: `snadboy.revp.80.https-certresolver=staging`
-
 ### Label Format
 
 ```
@@ -276,10 +272,22 @@ The provider uses **Cloudflare DNS challenge** for Let's Encrypt SSL certificate
    - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
    ```
 
+### Wildcard Certificate
+
+This setup uses a **single wildcard certificate** for all subdomains:
+- Main domain: `isnadboy.com`
+- Wildcard: `*.isnadboy.com`
+
+This means:
+- One certificate covers ALL subdomains
+- No rate limit issues with many services
+- New services automatically use the existing certificate
+- Faster startup (no per-service cert requests)
+
 ### Benefits of DNS Challenge
 - ✅ Works behind firewalls/NAT
 - ✅ No need for port 80 to be open
-- ✅ Can issue wildcard certificates (`*.isnadboy.com`)
+- ✅ Enables wildcard certificates (`*.isnadboy.com`)
 - ✅ Works while migrating from other reverse proxies
 
 ### Important Notes

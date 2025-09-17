@@ -253,7 +253,7 @@ class TraefikProvider:
                     domain = service_config['domain']
                     https_enabled = service_config['https_enabled']
                     redirect_https = service_config['redirect_https']
-                    cert_resolver = service_config['cert_resolver']
+                    # cert_resolver not needed - using wildcard certificate
 
                     # Create service (shared by all routers)
                     config['http']['services'][service_name] = {
@@ -273,9 +273,7 @@ class TraefikProvider:
                             'rule': f"Host(`{domain}`)",
                             'service': service_name,
                             'entryPoints': ['websecure'],
-                            'tls': {
-                                'certResolver': cert_resolver
-                            }
+                            'tls': {}  # Uses wildcard certificate from dynamic config
                         }
 
                         # Create HTTP redirect router
@@ -313,9 +311,7 @@ class TraefikProvider:
                             'rule': f"Host(`{domain}`)",
                             'service': service_name,
                             'entryPoints': ['websecure'],
-                            'tls': {
-                                'certResolver': cert_resolver
-                            }
+                            'tls': {}  # Uses wildcard certificate from dynamic config
                         }
 
                     else:
