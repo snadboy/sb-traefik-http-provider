@@ -86,6 +86,7 @@ The provider uses simplified `snadboy.revp.{PORT}.{SETTING}` labels for automati
 
 ### Optional Labels (with defaults)
 
+#### Backend Configuration
 - **`snadboy.revp.{PORT}.backend-proto`** - Backend protocol
   - **Default:** `http`
   - **Options:** `http`, `https`
@@ -95,6 +96,21 @@ The provider uses simplified `snadboy.revp.{PORT}.{SETTING}` labels for automati
   - **Default:** `/`
   - Example: `snadboy.revp.80.backend-path=/api/v1`
 
+#### HTTPS/TLS Configuration
+- **`snadboy.revp.{PORT}.https`** - Enable HTTPS with automatic Let's Encrypt certificates
+  - **Default:** `true`
+  - **Options:** `true`, `false`
+  - Example: `snadboy.revp.80.https=false` (HTTP only)
+
+- **`snadboy.revp.{PORT}.redirect-https`** - Automatically redirect HTTP to HTTPS
+  - **Default:** `true`
+  - **Options:** `true`, `false`
+  - Example: `snadboy.revp.80.redirect-https=false` (allow both HTTP and HTTPS)
+
+- **`snadboy.revp.{PORT}.https-certresolver`** - Certificate resolver to use
+  - **Default:** `letsencrypt`
+  - Example: `snadboy.revp.80.https-certresolver=staging`
+
 ### Label Format
 
 ```
@@ -102,42 +118,71 @@ snadboy.revp.{INTERNAL_PORT}.{SETTING}={VALUE}
 ```
 
 - **`{INTERNAL_PORT}`**: Container's internal port (e.g., `80`, `8080`, `3000`)
-- **`{SETTING}`**: Configuration setting (`domain`, `backend-proto`, `backend-path`)
+- **`{SETTING}`**: Configuration setting (see labels above)
 - **`{VALUE}`**: Setting value
+
+## HTTPS and SSL/TLS
+
+By default, all services automatically get:
+- ✅ **HTTPS enabled** with Let's Encrypt certificates
+- ✅ **HTTP to HTTPS redirect** for security
+- ✅ **Automatic certificate renewal**
 
 ### Examples
 
-#### Basic Web Application
+#### Basic Web Application (HTTPS by default)
 ```yaml
 labels:
   - "snadboy.revp.80.domain=myapp.example.com"
-  # Uses defaults: backend-proto=http, backend-path=/
+  # Automatically gets: HTTPS + HTTP redirect + Let's Encrypt certificate
 ```
+**Result**:
+- `http://myapp.example.com` → redirects to HTTPS
+- `https://myapp.example.com` → serves the application
 
-#### API with Custom Path
+#### HTTP-Only Service (internal/development)
+```yaml
+labels:
+  - "snadboy.revp.80.domain=internal-api.example.com"
+  - "snadboy.revp.80.https=false"
+```
+**Result**: Only `http://internal-api.example.com` (no HTTPS)
+
+#### Both HTTP and HTTPS (no redirect)
+```yaml
+labels:
+  - "snadboy.revp.80.domain=api.example.com"
+  - "snadboy.revp.80.redirect-https=false"
+```
+**Result**: Both protocols work without redirect
+- `http://api.example.com` → serves HTTP
+- `https://api.example.com` → serves HTTPS
+
+#### API with Custom Backend
 ```yaml
 labels:
   - "snadboy.revp.8080.domain=api.example.com"
   - "snadboy.revp.8080.backend-path=/api/v1"
   - "snadboy.revp.8080.backend-proto=https"
 ```
+**Result**: HTTPS frontend → HTTPS backend
 
-#### Multiple Ports
+#### Multiple Ports with Different Configs
 ```yaml
 labels:
   - "snadboy.revp.80.domain=app.example.com"
   - "snadboy.revp.9090.domain=metrics.example.com"
   - "snadboy.revp.9090.backend-path=/metrics"
+  - "snadboy.revp.9090.https=false"  # Internal metrics, HTTP only
 ```
 
 #### Complete Example from compose.yml
 ```yaml
-test-revp-app:
+my-app:
   image: nginx:alpine
   labels:
-    - "snadboy.revp.80.domain=test.localhost"
-    - "snadboy.revp.80.backend-proto=http"
-    - "snadboy.revp.80.backend-path=/"
+    - "snadboy.revp.80.domain=myapp.example.com"
+    # Gets HTTPS + redirect automatically
 ```
 
 ### Comparison: snadboy.revp vs Traditional Traefik Labels
@@ -162,14 +207,22 @@ labels:
   # That's it! backend-proto=http and backend-path=/ are defaults
 ```
 
-#### Advanced Traditional Example
+#### Advanced Traditional Example (HTTPS with redirect)
 ```yaml
 labels:
   - "traefik.enable=true"
-  - "traefik.http.routers.api.rule=Host(`api.example.com`) && PathPrefix(`/v1`)"
-  - "traefik.http.routers.api.service=api-service"
-  - "traefik.http.routers.api.entrypoints=web,websecure"
-  - "traefik.http.routers.api.tls=true"
+  # HTTPS router
+  - "traefik.http.routers.api-https.rule=Host(`api.example.com`)"
+  - "traefik.http.routers.api-https.entrypoints=websecure"
+  - "traefik.http.routers.api-https.tls=true"
+  - "traefik.http.routers.api-https.tls.certresolver=letsencrypt"
+  - "traefik.http.routers.api-https.service=api-service"
+  # HTTP redirect router
+  - "traefik.http.routers.api-http.rule=Host(`api.example.com`)"
+  - "traefik.http.routers.api-http.entrypoints=web"
+  - "traefik.http.routers.api-http.middlewares=api-redirect"
+  - "traefik.http.middlewares.api-redirect.redirectscheme.scheme=https"
+  # Service
   - "traefik.http.services.api-service.loadbalancer.server.port=8080"
   - "traefik.http.services.api-service.loadbalancer.server.scheme=https"
 ```
@@ -179,14 +232,32 @@ labels:
 labels:
   - "snadboy.revp.8080.domain=api.example.com"
   - "snadboy.revp.8080.backend-proto=https"
-  - "snadboy.revp.8080.backend-path=/v1"
+  # HTTPS + redirect are automatic defaults!
 ```
 
 **Benefits of snadboy.revp:**
-- 🎯 **Simpler**: 1-3 labels instead of 6+ labels
+- 🎯 **Simpler**: 1-2 labels instead of 10+ labels
 - 🚀 **Faster setup**: Less configuration needed
+- 🔒 **HTTPS by default**: Automatic Let's Encrypt certificates
 - 🐛 **Fewer errors**: Less complex syntax to get wrong
 - 📖 **More readable**: Clear, intuitive label names
+
+## Let's Encrypt Configuration
+
+The provider automatically configures Let's Encrypt for SSL certificates. By default, it uses **staging** certificates for testing. To use production certificates, update your compose.yml:
+
+```yaml
+# For production (in compose.yml):
+- "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
+
+# For staging/testing (default):
+- "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+```
+
+**Important**:
+- Update the email address in compose.yml: `your-email@example.com`
+- Let's Encrypt has rate limits: 50 certificates per domain per week
+- Always test with staging first to avoid hitting rate limits
 
 ## API Endpoints
 

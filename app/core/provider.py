@@ -154,6 +154,11 @@ class TraefikProvider:
             if not backend_path.startswith('/'):
                 backend_path = '/' + backend_path
 
+            # HTTPS configuration
+            https_enabled = config.get('https', 'true').lower() == 'true'
+            redirect_https = config.get('redirect-https', 'true').lower() == 'true'
+            cert_resolver = config.get('https-certresolver', 'letsencrypt')
+
             service_name = f"{container_name}-{internal_port}"
             service_url = f"{backend_proto}://{host}:{external_port}{backend_path}"
 
@@ -161,7 +166,10 @@ class TraefikProvider:
                 'domain': domain,
                 'service_url': service_url,
                 'internal_port': internal_port,
-                'external_port': external_port
+                'external_port': external_port,
+                'https_enabled': https_enabled,
+                'redirect_https': redirect_https,
+                'cert_resolver': cert_resolver
             }
 
         return revp_config
@@ -240,16 +248,14 @@ class TraefikProvider:
             if revp_config['enabled']:
                 for service_name, service_config in revp_config['services'].items():
                     logger.debug(f"  Creating service '{service_name}' -> {service_config['service_url']}")
+                    logger.debug(f"    HTTPS: {service_config['https_enabled']}, Redirect: {service_config['redirect_https']}")
 
-                    # Create router
-                    router_name = f"{service_name}-router"
-                    config['http']['routers'][router_name] = {
-                        'rule': f"Host(`{service_config['domain']}`)",
-                        'service': service_name,
-                        'entryPoints': ['web']
-                    }
+                    domain = service_config['domain']
+                    https_enabled = service_config['https_enabled']
+                    redirect_https = service_config['redirect_https']
+                    cert_resolver = service_config['cert_resolver']
 
-                    # Create service
+                    # Create service (shared by all routers)
                     config['http']['services'][service_name] = {
                         'loadBalancer': {
                             'servers': [{
@@ -257,6 +263,69 @@ class TraefikProvider:
                             }]
                         }
                     }
+
+                    if https_enabled and redirect_https:
+                        # HTTPS with redirect: HTTP router redirects, HTTPS router serves
+
+                        # Create HTTPS router
+                        https_router_name = f"{service_name}-https-router"
+                        config['http']['routers'][https_router_name] = {
+                            'rule': f"Host(`{domain}`)",
+                            'service': service_name,
+                            'entryPoints': ['websecure'],
+                            'tls': {
+                                'certResolver': cert_resolver
+                            }
+                        }
+
+                        # Create HTTP redirect router
+                        http_router_name = f"{service_name}-http-router"
+                        redirect_middleware_name = f"{service_name}-redirect-https"
+
+                        middlewares[redirect_middleware_name] = {
+                            'redirectScheme': {
+                                'scheme': 'https',
+                                'permanent': True
+                            }
+                        }
+
+                        config['http']['routers'][http_router_name] = {
+                            'rule': f"Host(`{domain}`)",
+                            'service': service_name,
+                            'entryPoints': ['web'],
+                            'middlewares': [redirect_middleware_name]
+                        }
+
+                    elif https_enabled and not redirect_https:
+                        # Both HTTP and HTTPS without redirect
+
+                        # HTTP router
+                        http_router_name = f"{service_name}-http-router"
+                        config['http']['routers'][http_router_name] = {
+                            'rule': f"Host(`{domain}`)",
+                            'service': service_name,
+                            'entryPoints': ['web']
+                        }
+
+                        # HTTPS router
+                        https_router_name = f"{service_name}-https-router"
+                        config['http']['routers'][https_router_name] = {
+                            'rule': f"Host(`{domain}`)",
+                            'service': service_name,
+                            'entryPoints': ['websecure'],
+                            'tls': {
+                                'certResolver': cert_resolver
+                            }
+                        }
+
+                    else:
+                        # HTTP only
+                        http_router_name = f"{service_name}-http-router"
+                        config['http']['routers'][http_router_name] = {
+                            'rule': f"Host(`{domain}`)",
+                            'service': service_name,
+                            'entryPoints': ['web']
+                        }
 
         # Only add middlewares to config if we have any
         if middlewares:
