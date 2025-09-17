@@ -108,6 +108,57 @@ class TraefikProvider:
             logger.error(f"Failed to inspect container {container_id}: {e}")
             return {}
 
+    def _load_static_routes(self) -> List[Dict[str, Any]]:
+        """Load static routes from configuration file"""
+        static_routes = []
+
+        # Check if static routes are enabled
+        if not self.config.get('enable_static_routes', False):
+            logger.debug("Static routes disabled in configuration")
+            return static_routes
+
+        static_routes_file = self.config.get('static_routes_file', 'config/static-routes.yaml')
+        if not os.path.exists(static_routes_file):
+            logger.warning(f"Static routes file {static_routes_file} not found")
+            return static_routes
+
+        try:
+            with open(static_routes_file, 'r') as f:
+                routes_config = yaml.safe_load(f)
+
+            raw_routes = routes_config.get('static_routes', [])
+            logger.info(f"Loading {len(raw_routes)} static routes from {static_routes_file}")
+
+            for route in raw_routes:
+                domain = route.get('domain')
+                target = route.get('target')
+
+                if not domain or not target:
+                    logger.warning(f"Skipping invalid static route: {route}")
+                    continue
+
+                # Apply defaults similar to container routes
+                https_enabled = route.get('https', True)
+                redirect_https = route.get('redirect-https', True)
+                description = route.get('description', '')
+
+                static_route = {
+                    'domain': domain,
+                    'target': target,
+                    'https_enabled': https_enabled,
+                    'redirect_https': redirect_https,
+                    'description': description,
+                    'type': 'static'
+                }
+
+                static_routes.append(static_route)
+                logger.debug(f"Loaded static route: {domain} -> {target}")
+
+        except Exception as e:
+            logger.error(f"Failed to load static routes from {static_routes_file}: {e}")
+
+        return static_routes
+
     def extract_snadboy_revp_labels(self, labels: Dict[str, str], container_name: str,
                                    host: str, port_mappings: Dict[str, str]) -> Dict[str, Any]:
         """Extract and parse snadboy.revp labels from container"""
@@ -323,6 +374,88 @@ class TraefikProvider:
                             'entryPoints': ['web']
                         }
 
+        # Process static routes
+        static_routes = self._load_static_routes()
+        for static_route in static_routes:
+            domain = static_route['domain']
+            target = static_route['target']
+            https_enabled = static_route['https_enabled']
+            redirect_https = static_route['redirect_https']
+
+            logger.debug(f"Processing static route: {domain} -> {target}")
+            logger.debug(f"  HTTPS: {https_enabled}, Redirect: {redirect_https}")
+
+            # Generate unique service name for static route
+            service_name = f"static-{domain.replace('.', '-').replace('*', 'wildcard')}"
+
+            # Create service pointing to static target
+            config['http']['services'][service_name] = {
+                'loadBalancer': {
+                    'servers': [{
+                        'url': target
+                    }]
+                }
+            }
+
+            if https_enabled and redirect_https:
+                # HTTPS with redirect: HTTP router redirects, HTTPS router serves
+
+                # Create HTTPS router
+                https_router_name = f"{service_name}-https-router"
+                config['http']['routers'][https_router_name] = {
+                    'rule': f"Host(`{domain}`)",
+                    'service': service_name,
+                    'entryPoints': ['websecure'],
+                    'tls': {}  # Uses wildcard certificate from dynamic config
+                }
+
+                # Create HTTP redirect router
+                http_router_name = f"{service_name}-http-router"
+                redirect_middleware_name = f"{service_name}-redirect-https"
+
+                middlewares[redirect_middleware_name] = {
+                    'redirectScheme': {
+                        'scheme': 'https',
+                        'permanent': True
+                    }
+                }
+
+                config['http']['routers'][http_router_name] = {
+                    'rule': f"Host(`{domain}`)",
+                    'service': service_name,
+                    'entryPoints': ['web'],
+                    'middlewares': [redirect_middleware_name]
+                }
+
+            elif https_enabled and not redirect_https:
+                # Both HTTP and HTTPS without redirect
+
+                # HTTP router
+                http_router_name = f"{service_name}-http-router"
+                config['http']['routers'][http_router_name] = {
+                    'rule': f"Host(`{domain}`)",
+                    'service': service_name,
+                    'entryPoints': ['web']
+                }
+
+                # HTTPS router
+                https_router_name = f"{service_name}-https-router"
+                config['http']['routers'][https_router_name] = {
+                    'rule': f"Host(`{domain}`)",
+                    'service': service_name,
+                    'entryPoints': ['websecure'],
+                    'tls': {}  # Uses wildcard certificate from dynamic config
+                }
+
+            else:
+                # HTTP only
+                http_router_name = f"{service_name}-http-router"
+                config['http']['routers'][http_router_name] = {
+                    'rule': f"Host(`{domain}`)",
+                    'service': service_name,
+                    'entryPoints': ['web']
+                }
+
         # Only add middlewares to config if we have any
         if middlewares:
             config['http']['middlewares'] = middlewares
@@ -331,10 +464,11 @@ class TraefikProvider:
         stats = {
             'routers': len(config['http']['routers']),
             'services': len(config['http']['services']),
-            'middlewares': len(middlewares)
+            'middlewares': len(middlewares),
+            'static_routes': len(static_routes)
         }
 
-        logger.info(f"Configuration built: {stats['routers']} routers, {stats['services']} services, {stats['middlewares']} middlewares")
+        logger.info(f"Configuration built: {stats['routers']} routers, {stats['services']} services, {stats['middlewares']} middlewares, {stats['static_routes']} static routes")
 
         return config
 

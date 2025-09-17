@@ -296,6 +296,73 @@ This means:
 - Always test with staging server first
 - Certificates auto-renew 30 days before expiration
 
+## Static Routes
+
+For services outside of Docker containers (e.g., network devices, VMs), you can define static routes that work alongside container-based routes.
+
+### Configuration
+
+1. **Enable static routes** in `config/provider-config.yaml`:
+   ```yaml
+   static_routes_file: config/static-routes.yaml
+   enable_static_routes: true
+   ```
+
+2. **Define routes** in `config/static-routes.yaml`:
+   ```yaml
+   static_routes:
+     - domain: unifi-gateway.isnadboy.com
+       target: https://192.168.86.78:8006
+       description: "UniFi Network Gateway"
+       https: true          # Optional: Enable HTTPS (default: true)
+       redirect-https: true # Optional: HTTP→HTTPS redirect (default: true)
+
+     - domain: proxmox.isnadboy.com
+       target: https://192.168.1.100:8006
+       description: "Proxmox Virtual Environment"
+
+     - domain: internal-api.isnadboy.com
+       target: http://192.168.1.200:8080
+       description: "Internal API Server"
+       https: false         # HTTP only
+   ```
+
+### Features
+
+- ✅ **Same HTTPS behavior** as container services
+- ✅ **Wildcard certificate** automatically applied
+- ✅ **HTTP redirects** by default
+- ✅ **Mixed protocols** - route HTTPS domains to HTTP backends
+- ✅ **IP addresses or hostnames** supported in targets
+- ✅ **Custom paths** supported (e.g., `http://host:3000/grafana`)
+
+### Examples
+
+#### Basic Static Route
+```yaml
+- domain: router.isnadboy.com
+  target: http://192.168.1.1
+  description: "Home Router Interface"
+# Gets HTTPS + redirect automatically
+```
+
+#### HTTP-only Internal Service
+```yaml
+- domain: prometheus.isnadboy.com
+  target: http://192.168.1.50:9090
+  description: "Prometheus Metrics"
+  https: false  # No HTTPS, HTTP only
+```
+
+#### HTTPS Backend with Custom Path
+```yaml
+- domain: grafana.isnadboy.com
+  target: https://192.168.1.50:3000/grafana
+  description: "Grafana Dashboard"
+```
+
+Static routes are processed alongside container routes and appear in the same configuration output.
+
 ## API Endpoints
 
 - `GET /health` - Health check

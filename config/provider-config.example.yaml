@@ -10,6 +10,10 @@ default_host: dev
 # snadboy.revp label configuration
 label_prefix: snadboy.revp
 
+# Static routes configuration
+static_routes_file: config/static-routes.yaml
+enable_static_routes: true
+
 # TLS configuration
 enable_tls: false
 
