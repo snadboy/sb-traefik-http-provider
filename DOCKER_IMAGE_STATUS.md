@@ -1,8 +1,8 @@
 # Docker Image Status
 
-## Current Status: Building from Source
+## Current Status: ✅ Published to GitHub Container Registry
 
-The Docker image is currently configured to **build from source** rather than pull from a registry.
+The Docker image is now available at: **`ghcr.io/snadboy/sb-traefik-http-provider:latest`**
 
 ## Options to Use Published Image
 
@@ -27,20 +27,25 @@ image: snadboy/sb-traefik-http-provider:latest
 2. Login: `docker login --username snadboy`
 3. Push: `docker push snadboy/sb-traefik-http-provider:latest`
 
-## Current Working Solution
+## Usage
 
-The compose files are configured to build locally:
+The compose files now use the published image:
 
 ```yaml
-build:
-  context: .
-  dockerfile: docker/Dockerfile.production
+image: ghcr.io/snadboy/sb-traefik-http-provider:latest
 ```
 
-This works immediately without requiring published images.
+## Fallback Option
 
-## Next Steps
+If you need to build locally, uncomment the build section:
 
-1. Publish image to GHCR or Docker Hub
-2. Update compose files to use published image
-3. Remove build context and use `image:` directive
+```yaml
+# build:
+#   context: .
+#   dockerfile: docker/Dockerfile.production
+```
+
+## Available Tags
+
+- `latest` - Latest stable version
+- `1.0.0` - Specific version 1.0.0
