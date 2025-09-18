@@ -10,7 +10,13 @@
 services:
   # SB Traefik HTTP Provider Service
   sb-traefik-http-provider:
-    image: snadboy/sb-traefik-http-provider:latest
+    # Option 1: Use published image (requires image to be published first)
+    # image: ghcr.io/snadboy/sb-traefik-http-provider:latest
+
+    # Option 2: Build locally from source (current working solution)
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.production
     container_name: sb-traefik-http-provider
     restart: unless-stopped
     ports:
