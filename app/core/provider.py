@@ -31,6 +31,9 @@ class TraefikProvider:
         self.processing_errors: List[str] = []
         self.label_parsing_errors: List[Dict[str, str]] = []
 
+        # Store processed containers from last configuration generation
+        self.last_processed_containers: List[Dict[str, Any]] = []
+
     def _load_config(self) -> Dict[str, Any]:
         """Load provider configuration"""
         if not os.path.exists(self.config_file):
@@ -421,7 +424,8 @@ class TraefikProvider:
                     self.track_excluded_container(
                         container,
                         "No snadboy.revp labels",
-                        source_host
+                        source_host,
+                        f"Container has {len(labels)} labels total, none with snadboy.revp prefix"
                     )
 
         # Process static routes
@@ -540,6 +544,8 @@ class TraefikProvider:
         containers_data = []
         for target_host in target_hosts:
             logger.debug(f"Discovering containers on host: {target_host}")
+            # Check SSH host health during discovery
+            await self.check_ssh_host_health(target_host)
             containers = await self.discover_containers(target_host)
 
             for container in containers:
@@ -553,6 +559,9 @@ class TraefikProvider:
         logger.info(f"Total containers discovered across all hosts: {len(containers_data)}")
 
         config = self.build_traefik_config(containers_data)
+
+        # Store processed containers for API endpoints
+        self.last_processed_containers = containers_data.copy()
 
         # Add enhanced metadata with diagnostic information
         end_time = time.time()
@@ -609,18 +618,17 @@ class TraefikProvider:
                     status['hostname'] = host_config.get('hostname', host)
 
             # Test connection and gather info
-            containers = await self.ssh_client.list_containers(
-                host=host,
-                filters={"STATUS": "running"}
-            )
+            # Get all containers first, then filter for running ones
+            all_containers = await self.ssh_client.list_containers(host=host)
+            running_containers = [c for c in all_containers if 'up ' in c.get('Status', '').lower()]
 
             connection_time = int((time.time() - start_time) * 1000)
             status.update({
                 'status': 'connected',
                 'connection_time_ms': connection_time,
                 'last_successful_connection': status['last_attempt'],
-                'containers_total': len(containers),
-                'containers_running': len([c for c in containers if 'running' in c.get('Status', '').lower()])
+                'containers_total': len(all_containers),
+                'containers_running': len(running_containers)
             })
 
             # Try to get Docker version
@@ -676,9 +684,22 @@ class TraefikProvider:
 
     def track_excluded_container(self, container: Dict[str, Any], reason: str, host: str, details: str = None):
         """Track a container that was excluded from routing"""
+        # Extract container name properly
+        raw_names = container.get('Names', container.get('Name', ''))
+        if isinstance(raw_names, list):
+            container_name = raw_names[0].strip('/') if raw_names else 'unknown'
+        elif isinstance(raw_names, str):
+            container_name = raw_names.strip('/')
+        else:
+            container_name = str(raw_names) if raw_names else 'unknown'
+
         excluded = {
             'id': container.get('ID', ''),
-            'name': container.get('Names', container.get('Name', '')),
+            'name': container_name,
+            'image': container.get('Image', ''),
+            'status': container.get('Status', ''),
+            'state': container.get('State', 'unknown'),
+            'created': container.get('Created'),
             'reason': reason,
             'host': host,
             'details': details
@@ -760,4 +781,5 @@ class TraefikProvider:
         self.excluded_containers.clear()
         self.processing_errors.clear()
         self.label_parsing_errors.clear()
-        self.ssh_host_status.clear()
+        self.last_processed_containers.clear()
+        # Note: ssh_host_status is NOT cleared - it persists across generations

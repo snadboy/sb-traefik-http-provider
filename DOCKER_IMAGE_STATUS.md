@@ -47,5 +47,7 @@ If you need to build locally, uncomment the build section:
 
 ## Available Tags
 
-- `latest` - Latest stable version
-- `1.0.0` - Specific version 1.0.0
+- `latest` - Latest stable version (v1.1.1)
+- `v1.1.1` - Container running count fix for SSH host monitoring
+- `v1.1.0` - Diagnostic API release with SSH monitoring and container exclusion tracking
+- `1.0.0` - Initial stable release

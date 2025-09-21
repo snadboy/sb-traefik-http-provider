@@ -129,18 +129,48 @@ async def list_containers(
     try:
         provider = get_provider()
 
-        # Run configuration generation to populate diagnostic data
+        # Run configuration generation to populate diagnostic data and store processed containers
         await provider.generate_config(host)
 
-        # Get containers after config generation (enables tracking)
-        containers = await provider.discover_containers(host)
+        # Use the processed containers from configuration generation
+        # This ensures consistency between included/excluded tracking
+        processed_containers = provider.last_processed_containers
 
-        target_host = host or provider.config.get('default_host')
-        logger.info(f"Returning {len(containers)} containers from {target_host}")
+        # Filter out containers that were excluded (to avoid duplicates)
+        excluded_ids = {excluded['id'] for excluded in provider.excluded_containers}
+
+        # Convert processed containers to the format expected by container models
+        containers_all = []
+        for container_data in processed_containers:
+            container = container_data.get('container', {})
+            details = container_data.get('details', {})
+            source_host = container_data.get('source_host', 'unknown')
+
+            # Skip containers that were tracked as excluded
+            container_id = container.get('ID', '')
+            if container_id in excluded_ids:
+                continue
+
+            # Add source host info and convert to expected format
+            container_info = container.copy()
+            container_info['_source_host'] = source_host
+
+            # Extract status from container data (not from details)
+            if 'Status' not in container_info and details:
+                # Try to get status from details if not in container
+                state_info = details.get('State', {})
+                if isinstance(state_info, dict):
+                    container_info['Status'] = state_info.get('Status', 'unknown')
+                    container_info['State'] = 'running' if state_info.get('Running') else 'stopped'
+
+            containers_all.append(container_info)
+
+        target_hosts = [host] if host else provider._get_enabled_hosts()
+        logger.info(f"Returning {len(containers_all)} included containers from {target_hosts}")
 
         # Convert to Pydantic models with proper data type handling
         container_models = []
-        for c in containers:
+        for c in containers_all:
             # Handle Labels - convert string to dict if needed
             labels = c.get('Labels', {})
             if isinstance(labels, str):
@@ -187,7 +217,7 @@ async def list_containers(
                 Networks=networks,
                 Ports=ports,
                 Created=c.get('Created'),
-                host=target_host
+                host=c.get('_source_host', target_hosts[0] if len(target_hosts) == 1 else 'unknown')
             ))
 
         # Get excluded containers from diagnostic data
@@ -196,16 +226,20 @@ async def list_containers(
             excluded_container_models.append(ExcludedContainer(
                 id=excluded['id'],
                 name=excluded['name'],
+                image=excluded.get('image', ''),
+                status=excluded.get('status', ''),
+                state=excluded.get('state', 'unknown'),
+                created=excluded.get('created'),
                 reason=excluded['reason'],
                 host=excluded['host'],
                 details=excluded.get('details')
             ))
 
         # Build diagnostics
-        total_discovered = len(containers) + len(excluded_container_models)
+        total_discovered = len(containers_all) + len(excluded_container_models)
         containers_with_labels = len([
             c for c in provider.excluded_containers
-            if 'snadboy.revp' in c.get('details', '')
+            if 'snadboy.revp' in (c.get('details') or '')
         ]) + len(container_models)  # Approximation
 
         diagnostics = ContainerDiagnostics(
@@ -215,12 +249,23 @@ async def list_containers(
             processing_errors=provider.processing_errors.copy()
         )
 
+        # Data consistency validation - ensure no duplicates between included and excluded
+        included_ids = {c.id for c in container_models}
+        excluded_ids_check = {c.id for c in excluded_container_models}
+        duplicate_ids = included_ids.intersection(excluded_ids_check)
+
+        if duplicate_ids:
+            logger.error(f"CONSISTENCY ERROR: Found {len(duplicate_ids)} containers in both included and excluded lists: {duplicate_ids}")
+            # Remove duplicates from included list to prevent API inconsistency
+            container_models = [c for c in container_models if c.id not in duplicate_ids]
+            logger.warning(f"Removed {len(duplicate_ids)} duplicate containers from included list")
+
         return ContainerListResponse(
             containers=container_models,
             excluded_containers=excluded_container_models,
             diagnostics=diagnostics,
             count=len(container_models),
-            host=target_host
+            host=host or "all_hosts"
         )
 
     except ValueError as e:
@@ -337,6 +382,10 @@ async def get_debug_info() -> DebugResponse:
     try:
         provider = get_provider()
 
+        # Run a configuration generation to populate diagnostic data
+        # This ensures we have fresh diagnostic information
+        config = await provider.generate_config()
+
         # Get label parsing diagnostics
         from app.models import LabelDiagnostics, LabelParsingError
         label_errors = [
@@ -348,19 +397,20 @@ async def get_debug_info() -> DebugResponse:
             for error in provider.label_parsing_errors
         ]
 
-        # Count containers with snadboy labels
-        # This would require running a discovery first, so we'll use cached data
-        containers_with_labels = 0
-        valid_configurations = 0
+        # After running generate_config, we can get accurate counts
+        # Count successfully configured services (excluding static routes)
+        all_services = len(config['http']['services'])
+        static_routes_count = len(provider._load_static_routes())
+        valid_configurations = all_services - static_routes_count
 
-        # Try to get recent data from the last configuration generation
-        if hasattr(provider, 'excluded_containers'):
-            # Count containers that had labels but were excluded for configuration issues
-            excluded_with_labels = len([
-                c for c in provider.excluded_containers
-                if c['reason'] == 'Invalid label configuration'
-            ])
-            containers_with_labels = excluded_with_labels + len(provider.label_parsing_errors)
+        # Count containers that had labels but were excluded for configuration issues
+        excluded_with_labels = len([
+            c for c in provider.excluded_containers
+            if c['reason'] == 'Invalid label configuration'
+        ])
+
+        # Total containers with snadboy labels = valid configs + excluded with invalid labels
+        containers_with_labels = valid_configurations + excluded_with_labels
 
         label_diagnostics = LabelDiagnostics(
             containers_with_snadboy_labels=containers_with_labels,

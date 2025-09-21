@@ -459,7 +459,7 @@ Monitor the health of all configured SSH hosts:
 - Last successful connection timestamp
 - Connection time in milliseconds
 - Docker version information
-- Container counts (total and running)
+- Container counts (total and running) - accurately detects containers with status "Up"
 
 #### Debug Information
 Comprehensive debugging data including:

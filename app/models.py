@@ -101,6 +101,10 @@ class ExcludedContainer(BaseModel):
     """Information about excluded containers"""
     id: str = Field(..., description="Container ID")
     name: str = Field(..., description="Container name")
+    image: str = Field(..., description="Container image")
+    status: str = Field(..., description="Container status")
+    state: str = Field(..., description="Container state")
+    created: Optional[str] = Field(None, description="Container creation time")
     reason: str = Field(..., description="Reason for exclusion")
     host: str = Field(..., description="SSH host where container is running")
     details: Optional[str] = Field(None, description="Additional details about exclusion")
