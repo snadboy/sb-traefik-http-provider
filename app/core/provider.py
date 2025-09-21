@@ -7,7 +7,8 @@ import os
 import yaml
 import logging
 import re
-from typing import Dict, Any, List, Optional
+import time
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 from pathlib import Path
 from snadboy_ssh_docker import SSHDockerClient
@@ -23,6 +24,12 @@ class TraefikProvider:
         self.config = self._load_config()
         self.ssh_client = None
         self._initialize_client()
+
+        # Diagnostic tracking
+        self.ssh_host_status: Dict[str, Dict[str, Any]] = {}
+        self.excluded_containers: List[Dict[str, Any]] = []
+        self.processing_errors: List[str] = []
+        self.label_parsing_errors: List[Dict[str, str]] = []
 
     def _load_config(self) -> Dict[str, Any]:
         """Load provider configuration"""
@@ -192,6 +199,12 @@ class TraefikProvider:
         for internal_port, config in port_configs.items():
             domain = config.get('domain')
             if not domain:
+                # Track label parsing error for missing domain
+                self.track_label_parsing_error(
+                    container_name,
+                    f"snadboy.revp.{internal_port}.*",
+                    f"Missing required 'domain' label for port {internal_port}"
+                )
                 continue
 
             # Get external port mapping
@@ -276,6 +289,13 @@ class TraefikProvider:
             except Exception as e:
                 logger.error(f"Error processing labels for container {container_name}: {e}")
                 logger.debug(f"  Labels value: {labels}")
+                # Track as excluded container due to label processing error
+                self.track_excluded_container(
+                    container,
+                    "Label processing error",
+                    source_host,
+                    f"Exception: {str(e)}"
+                )
                 snadboy_labels = {}
 
             if snadboy_labels:
@@ -292,9 +312,21 @@ class TraefikProvider:
                     port_mappings[internal_port] = mappings[0].get('HostPort', internal_port.split('/')[0])
 
             # Process snadboy.revp labels
-            revp_config = self.extract_snadboy_revp_labels(
-                labels, container_name, source_host, port_mappings
-            )
+            try:
+                revp_config = self.extract_snadboy_revp_labels(
+                    labels, container_name, source_host, port_mappings
+                )
+            except Exception as e:
+                logger.error(f"Error extracting snadboy.revp labels for container {container_name}: {e}")
+                # Track as excluded container due to label extraction error
+                self.track_excluded_container(
+                    container,
+                    "Label extraction error",
+                    source_host,
+                    f"Exception: {str(e)}"
+                )
+                # Continue with empty config (will be tracked as excluded)
+                revp_config = {'enabled': False, 'services': {}}
 
             if revp_config['enabled']:
                 for service_name, service_config in revp_config['services'].items():
@@ -373,6 +405,24 @@ class TraefikProvider:
                             'service': service_name,
                             'entryPoints': ['web']
                         }
+            else:
+                # Track excluded container
+                snadboy_labels = {k: v for k, v in labels.items() if k.startswith('snadboy.revp')}
+                if snadboy_labels:
+                    # Has snadboy labels but configuration is invalid
+                    self.track_excluded_container(
+                        container,
+                        "Invalid label configuration",
+                        source_host,
+                        f"Found labels: {list(snadboy_labels.keys())}"
+                    )
+                else:
+                    # No snadboy labels
+                    self.track_excluded_container(
+                        container,
+                        "No snadboy.revp labels",
+                        source_host
+                    )
 
         # Process static routes
         static_routes = self._load_static_routes()
@@ -474,6 +524,9 @@ class TraefikProvider:
 
     async def generate_config(self, host: Optional[str] = None) -> Dict[str, Any]:
         """Generate complete Traefik configuration"""
+        # Reset diagnostic tracking for fresh generation
+        self.reset_diagnostics()
+        start_time = time.time()
         if host:
             # Query specific host
             target_hosts = [host]
@@ -501,12 +554,210 @@ class TraefikProvider:
 
         config = self.build_traefik_config(containers_data)
 
-        # Add metadata
+        # Add enhanced metadata with diagnostic information
+        end_time = time.time()
+        processing_time_ms = int((end_time - start_time) * 1000)
+
+        # Separate successful vs failed hosts
+        hosts_successful = []
+        hosts_failed = []
+        for host in target_hosts:
+            if host in self.ssh_host_status and self.ssh_host_status[host].get('status') == 'connected':
+                hosts_successful.append(host)
+            else:
+                hosts_failed.append(host)
+
+        # Count static routes
+        static_routes_count = 0
+        if self.config.get('enable_static_routes', False):
+            static_routes = self._load_static_routes()
+            static_routes_count = len(static_routes)
+
         config['_metadata'] = {
             'generated_at': datetime.now(timezone.utc).isoformat(),
             'hosts_queried': target_hosts,
             'container_count': len(containers_data),
-            'enabled_services': len(config['http']['services'])
+            'enabled_services': len(config['http']['services']),
+            'processing_time_ms': processing_time_ms,
+            'hosts_successful': hosts_successful,
+            'hosts_failed': hosts_failed,
+            'excluded_containers': len(self.excluded_containers),
+            'static_routes': static_routes_count
         }
 
         return config
+
+    async def check_ssh_host_health(self, host: str) -> Dict[str, Any]:
+        """Check SSH host connectivity and gather diagnostic info"""
+        start_time = time.time()
+        status = {
+            'hostname': '',
+            'status': 'unknown',
+            'last_attempt': datetime.now(timezone.utc).isoformat(),
+            'connection_time_ms': None,
+            'error_count': 0,
+            'last_error': None
+        }
+
+        try:
+            # Get host configuration
+            ssh_hosts_file = self.config.get('ssh_hosts_file', 'config/ssh-hosts.yaml')
+            if os.path.exists(ssh_hosts_file):
+                with open(ssh_hosts_file, 'r') as f:
+                    ssh_config = yaml.safe_load(f)
+                    host_config = ssh_config.get('hosts', {}).get(host, {})
+                    status['hostname'] = host_config.get('hostname', host)
+
+            # Test connection and gather info
+            containers = await self.ssh_client.list_containers(
+                host=host,
+                filters={"STATUS": "running"}
+            )
+
+            connection_time = int((time.time() - start_time) * 1000)
+            status.update({
+                'status': 'connected',
+                'connection_time_ms': connection_time,
+                'last_successful_connection': status['last_attempt'],
+                'containers_total': len(containers),
+                'containers_running': len([c for c in containers if 'running' in c.get('Status', '').lower()])
+            })
+
+            # Try to get Docker version
+            try:
+                docker_info = await self.ssh_client.get_docker_info(host)
+                status['docker_version'] = docker_info.get('ServerVersion', 'unknown')
+            except Exception:
+                pass  # Docker version is optional
+
+        except Exception as e:
+            connection_time = int((time.time() - start_time) * 1000)
+            error_msg = str(e)
+
+            # Determine error type
+            if 'timeout' in error_msg.lower():
+                error_type = 'timeout'
+            elif 'permission' in error_msg.lower() or 'auth' in error_msg.lower():
+                error_type = 'permission'
+            elif 'connection refused' in error_msg.lower():
+                error_type = 'unreachable'
+            else:
+                error_type = 'error'
+
+            status.update({
+                'status': error_type,
+                'connection_time_ms': connection_time,
+                'last_error': error_msg,
+                'error_count': status.get('error_count', 0) + 1
+            })
+
+        # Update tracking
+        self.ssh_host_status[host] = status
+        return status
+
+    async def get_all_ssh_host_status(self) -> Dict[str, Dict[str, Any]]:
+        """Get health status for all configured SSH hosts"""
+        enabled_hosts = self._get_enabled_hosts()
+        status_results = {}
+
+        for host in enabled_hosts:
+            try:
+                status_results[host] = await self.check_ssh_host_health(host)
+            except Exception as e:
+                logger.error(f"Failed to check host {host}: {e}")
+                status_results[host] = {
+                    'hostname': host,
+                    'status': 'error',
+                    'last_error': str(e),
+                    'last_attempt': datetime.now(timezone.utc).isoformat()
+                }
+
+        return status_results
+
+    def track_excluded_container(self, container: Dict[str, Any], reason: str, host: str, details: str = None):
+        """Track a container that was excluded from routing"""
+        excluded = {
+            'id': container.get('ID', ''),
+            'name': container.get('Names', container.get('Name', '')),
+            'reason': reason,
+            'host': host,
+            'details': details
+        }
+        self.excluded_containers.append(excluded)
+        logger.debug(f"Excluded container {excluded['name']} on {host}: {reason}")
+
+    def track_label_parsing_error(self, container_name: str, label: str, error: str):
+        """Track a label parsing error"""
+        self.label_parsing_errors.append({
+            'container': container_name,
+            'label': label,
+            'error': error
+        })
+        logger.warning(f"Label parsing error in {container_name}: {error}")
+
+    def get_static_route_diagnostics(self) -> Dict[str, Any]:
+        """Get static route loading diagnostics"""
+        static_routes = []
+        errors = []
+
+        try:
+            if not self.config.get('enable_static_routes', False):
+                return {'loaded': 0, 'errors': ['Static routes disabled']}
+
+            static_routes_file = self.config.get('static_routes_file', 'config/static-routes.yaml')
+            if not os.path.exists(static_routes_file):
+                errors.append(f"Static routes file not found: {static_routes_file}")
+                return {'loaded': 0, 'errors': errors}
+
+            with open(static_routes_file, 'r') as f:
+                routes_config = yaml.safe_load(f)
+                raw_routes = routes_config.get('static_routes', [])
+
+                for route in raw_routes:
+                    domain = route.get('domain')
+                    target = route.get('target')
+
+                    if not domain or not target:
+                        errors.append(f"Invalid route config: {route}")
+                        continue
+
+                    static_routes.append(route)
+
+        except Exception as e:
+            errors.append(f"Failed to load static routes: {e}")
+
+        return {
+            'loaded': len(static_routes),
+            'errors': errors
+        }
+
+    def get_ssh_diagnostics(self) -> Dict[str, Any]:
+        """Get SSH connection diagnostics"""
+        ssh_keys_dir = Path("ssh-keys")
+        key_files = []
+
+        if ssh_keys_dir.exists():
+            for key_file in ssh_keys_dir.glob("*"):
+                if key_file.is_file() and not key_file.name.startswith('.'):
+                    key_files.append(str(key_file))
+
+        enabled_hosts = self._get_enabled_hosts()
+        reachable_hosts = len([h for h, s in self.ssh_host_status.items() if s.get('status') == 'connected'])
+
+        timeouts = len([h for h, s in self.ssh_host_status.items() if s.get('status') == 'timeout'])
+        permission_errors = len([h for h, s in self.ssh_host_status.items() if s.get('status') == 'permission'])
+
+        return {
+            'key_files': key_files,
+            'connection_timeouts': timeouts,
+            'permission_errors': permission_errors,
+            'hosts_configured': len(enabled_hosts),
+            'hosts_reachable': reachable_hosts
+        }
+
+    def reset_diagnostics(self):
+        """Reset diagnostic tracking data"""
+        self.excluded_containers.clear()
+        self.processing_errors.clear()
+        self.label_parsing_errors.clear()
+        self.ssh_host_status.clear()

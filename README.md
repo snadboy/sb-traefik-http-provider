@@ -419,12 +419,72 @@ Static routes are processed alongside container routes and appear in the same co
 
 ## API Endpoints
 
+### Core Endpoints
 - `GET /health` - Health check
-- `GET /api/traefik/config` - Get Traefik configuration
-- `GET /api/containers` - List discovered containers (debug)
+- `GET /api/traefik/config` - Get Traefik configuration with enhanced metadata
+- `GET /api/containers` - List discovered containers with exclusion info and diagnostics
+
+### Diagnostic Endpoints
+- `GET /api/status` - Comprehensive system status including SSH host health
+- `GET /api/hosts` - SSH host connection statuses
+- `GET /api/debug` - Detailed debugging information (label parsing, static routes, SSH diagnostics)
+
+### Documentation
 - `GET /docs` - Interactive Swagger UI documentation
 - `GET /redoc` - Alternative ReDoc documentation
 - `GET /openapi.json` - OpenAPI specification
+
+### API Response Features
+
+#### Enhanced Configuration Metadata
+The `/api/traefik/config` endpoint now returns enhanced metadata including:
+- Processing time in milliseconds
+- Successful vs failed SSH hosts
+- Number of excluded containers
+- Static route count
+- Diagnostic information
+
+#### Container Exclusion Tracking
+The `/api/containers` endpoint provides detailed information about:
+- **Included containers**: Successfully configured containers with valid `snadboy.revp` labels
+- **Excluded containers**: Containers excluded from routing with reasons:
+  - `No snadboy.revp labels` - Container has no routing labels
+  - `Invalid label configuration` - Container has labels but configuration is invalid
+  - `Label processing error` - Exception occurred while processing labels
+  - `Label extraction error` - Error extracting labels from container
+
+#### SSH Host Health Monitoring
+Monitor the health of all configured SSH hosts:
+- Connection status (connected, unreachable, error)
+- Last successful connection timestamp
+- Connection time in milliseconds
+- Docker version information
+- Container counts (total and running)
+
+#### Debug Information
+Comprehensive debugging data including:
+- **Label Parsing**: Containers with snadboy labels, valid configurations, parsing errors
+- **Static Routes**: Loaded routes and configuration errors
+- **SSH Diagnostics**: Key files, connection timeouts, permission errors
+
+### Example API Usage
+
+```bash
+# Check system health and SSH host status
+curl http://localhost:8081/api/status
+
+# List all containers with exclusion information
+curl http://localhost:8081/api/containers
+
+# Get SSH host connection statuses
+curl http://localhost:8081/api/hosts
+
+# Get detailed debugging information
+curl http://localhost:8081/api/debug
+
+# Get Traefik configuration with enhanced metadata
+curl http://localhost:8081/api/traefik/config
+```
 
 ## Development
 
