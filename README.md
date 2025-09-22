@@ -7,6 +7,7 @@ A high-performance FastAPI-based HTTP provider for Traefik that discovers Docker
 - **Multi-host Docker Discovery**: Discover containers across multiple Docker hosts via SSH
 - **Dynamic Configuration**: Automatically generate Traefik routing configuration from container labels
 - **Simplified Label Syntax**: Uses `snadboy.revp` labels for easier container configuration
+- **Proper Hostname Resolution**: Service URLs use actual hostnames from SSH config for reliable routing
 - **FastAPI Framework**: Native async/await support with automatic API documentation
 - **Type Safety**: Pydantic models for request/response validation
 - **Health Checks**: Endpoints for monitoring provider health
@@ -651,6 +652,13 @@ Enable with `LOG_JSON=true` for log aggregation systems:
    │ Traefik  │
    └──────────┘
 ```
+
+### Hostname Resolution
+
+The provider uses the actual hostnames from SSH configuration (e.g., `host-media-arr.isnadboy.com`) when building service URLs, rather than SSH alias names (e.g., `media-arr`). This ensures:
+- Traefik can always resolve backend addresses
+- No dependency on DNS tricks or Tailscale MagicDNS
+- Consistent routing using the same hostnames that work for SSH connections
 
 ### Technology Stack
 

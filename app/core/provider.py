@@ -90,6 +90,23 @@ class TraefikProvider:
             logger.error(f"Failed to get enabled hosts: {e}")
             return []
 
+    def _get_ssh_hostname(self, alias: str) -> str:
+        """Get the actual hostname for an SSH alias from config"""
+        try:
+            ssh_hosts_file = self.config.get('ssh_hosts_file', 'config/ssh-hosts.yaml')
+            if os.path.exists(ssh_hosts_file):
+                with open(ssh_hosts_file, 'r') as f:
+                    ssh_config = yaml.safe_load(f)
+                    host_config = ssh_config.get('hosts', {}).get(alias, {})
+                    hostname = host_config.get('hostname', alias)
+                    logger.debug(f"Resolved SSH alias '{alias}' to hostname '{hostname}'")
+                    return hostname
+        except Exception as e:
+            logger.warning(f"Failed to resolve hostname for alias '{alias}': {e}")
+
+        # Fall back to alias if we can't resolve
+        return alias
+
     async def discover_containers(self, host: Optional[str] = None) -> List[Dict[str, Any]]:
         """Discover running containers on specified host"""
         target_host = host or self.config.get('default_host')
@@ -177,6 +194,9 @@ class TraefikProvider:
             'services': {}
         }
 
+        # Resolve the SSH alias to actual hostname for service URL
+        resolved_hostname = self._get_ssh_hostname(host)
+
         # Look for snadboy.revp.{PORT}.* labels
         revp_pattern = re.compile(r'^snadboy\.revp\.(\d+)\.(.+)$')
         port_configs = {}
@@ -227,7 +247,7 @@ class TraefikProvider:
             cert_resolver = config.get('https-certresolver', 'letsencrypt')
 
             service_name = f"{container_name}-{internal_port}"
-            service_url = f"{backend_proto}://{host}:{external_port}{backend_path}"
+            service_url = f"{backend_proto}://{resolved_hostname}:{external_port}{backend_path}"
 
             revp_config['services'][service_name] = {
                 'domain': domain,

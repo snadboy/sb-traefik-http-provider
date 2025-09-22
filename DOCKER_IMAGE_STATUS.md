@@ -47,7 +47,8 @@ If you need to build locally, uncomment the build section:
 
 ## Available Tags
 
-- `latest` - Latest stable version (v1.1.1)
+- `latest` - Latest stable version (v1.2.0)
+- `v1.2.0` - Use actual hostnames from SSH config for reliable service routing
 - `v1.1.1` - Container running count fix for SSH host monitoring
 - `v1.1.0` - Diagnostic API release with SSH monitoring and container exclusion tracking
 - `1.0.0` - Initial stable release
