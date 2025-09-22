@@ -8,6 +8,7 @@ A high-performance FastAPI-based HTTP provider for Traefik that discovers Docker
 - **Dynamic Configuration**: Automatically generate Traefik routing configuration from container labels
 - **Simplified Label Syntax**: Uses `snadboy.revp` labels for easier container configuration
 - **Proper Hostname Resolution**: Service URLs use actual hostnames from SSH config for reliable routing
+- **Robust SSH Key Management**: Automatic key copying, permission fixing, and NFS/NAS compatibility
 - **FastAPI Framework**: Native async/await support with automatic API documentation
 - **Type Safety**: Pydantic models for request/response validation
 - **Health Checks**: Endpoints for monitoring provider health
@@ -72,7 +73,31 @@ That's it! Your containers with `snadboy.revp` labels will now be automatically 
 
 For development or building from source:
 
-### 1. Configure SSH Hosts
+### 1. Setup SSH Keys
+
+**SSH Key Requirements:**
+- Private keys must have `600` permissions (readable only by owner)
+- Keys are automatically copied into the container during startup with proper permissions
+- Supports NFS/NAS mounted directories (source can be read-only)
+- Intelligent file detection with size validation to prevent empty key files
+- Comprehensive validation and clear error messages for troubleshooting
+
+**Setup SSH Keys:**
+```bash
+# Create SSH keys directory
+mkdir -p ssh-keys
+
+# Copy your SSH private key
+cp /path/to/your/private-key ssh-keys/id_ssh
+
+# Set proper permissions (critical for SSH)
+chmod 600 ssh-keys/id_ssh
+```
+
+**NFS/NAS Compatibility:**
+If your SSH keys are on a read-only NFS/NAS mount, that's fine! The container will copy keys and set proper permissions automatically.
+
+### 2. Configure SSH Hosts
 
 Copy the example and customize:
 ```bash
@@ -690,6 +715,33 @@ The provider uses the actual hostnames from SSH configuration (e.g., `host-media
 - `description`: Human-readable description
 
 ## Troubleshooting
+
+### SSH Key Issues
+
+**Error: "SSH private key not found"**
+```bash
+# Ensure SSH key exists in the correct location
+ls -la ssh-keys/id_ssh
+
+# Check permissions (should be 600)
+stat -c %a ssh-keys/id_ssh
+```
+
+**Error: "SSH private key has incorrect permissions"**
+```bash
+# Fix permissions
+chmod 600 ssh-keys/id_ssh
+
+# Verify
+ls -la ssh-keys/id_ssh
+# Should show: -rw------- 1 user user
+```
+
+**Error: "Read-only file system"**
+This indicates the SSH keys directory is mounted read-only. The container will automatically copy keys and set proper permissions during startup.
+
+**Error: "Could not update key permissions"**
+This is expected on NFS/NAS mounts. The container handles this automatically by copying keys to a writable location.
 
 ### Connection Issues
 

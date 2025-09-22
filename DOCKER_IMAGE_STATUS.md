@@ -47,7 +47,8 @@ If you need to build locally, uncomment the build section:
 
 ## Available Tags
 
-- `latest` - Latest stable version (v1.2.0)
+- `latest` - Latest stable version (v1.3.0)
+- `v1.3.0` - Robust SSH key handling with NFS/NAS support and proper validation
 - `v1.2.0` - Use actual hostnames from SSH config for reliable service routing
 - `v1.1.1` - Container running count fix for SSH host monitoring
 - `v1.1.0` - Diagnostic API release with SSH monitoring and container exclusion tracking

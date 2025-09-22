@@ -57,14 +57,45 @@ class TraefikProvider:
         }
 
     def _initialize_client(self):
-        """Initialize SSH Docker client"""
+        """Initialize SSH Docker client with validation"""
         try:
+            # Validate SSH key file exists and has proper permissions
+            ssh_key_path = Path('/app/ssh-keys/id_ssh')
+            if not ssh_key_path.exists():
+                error_msg = (
+                    f"SSH private key not found at {ssh_key_path}. "
+                    "Ensure SSH key is mounted properly and exists in the source directory."
+                )
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
+
+            # Check SSH key permissions
+            key_stat = ssh_key_path.stat()
+            key_perms = oct(key_stat.st_mode)[-3:]
+            if key_perms != '600':
+                error_msg = (
+                    f"SSH private key has incorrect permissions: {key_perms}. "
+                    f"Key must have 600 permissions for security. "
+                    f"Current key: {ssh_key_path}"
+                )
+                logger.error(error_msg)
+                raise PermissionError(error_msg)
+
             ssh_hosts_file = self.config.get('ssh_hosts_file', 'config/ssh-hosts.yaml')
             ssh_hosts_path = Path(ssh_hosts_file).resolve()
+
+            if not ssh_hosts_path.exists():
+                error_msg = f"SSH hosts configuration file not found: {ssh_hosts_path}"
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
+
             self.ssh_client = SSHDockerClient(config_file=ssh_hosts_path)
             logger.info("SSH Docker client initialized successfully")
+            logger.info(f"Using SSH key: {ssh_key_path} (permissions: {key_perms})")
+
         except Exception as e:
-            logger.error(f"Failed to initialize SSH client: {e}")
+            logger.error(f"CRITICAL: Failed to initialize SSH client: {e}")
+            logger.error("This is a fatal error. The provider cannot function without SSH connectivity.")
             raise
 
     def _get_enabled_hosts(self) -> List[str]:

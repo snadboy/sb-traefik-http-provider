@@ -13,7 +13,7 @@ services:
     volumes:
       - ./config/provider-config.yaml:/app/config/provider-config.yaml:ro
       - ./config/ssh-hosts.yaml:/app/config/ssh-hosts.yaml:ro
-      - ./id_ssh:/app/ssh-keys/id_ssh:ro  # SSH key for remote Docker hosts
+      - .:/mnt/ssh-keys:ro  # Source SSH keys (read-only, copied during startup)
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Optional: local Docker socket
       - ./logs:/var/log/sb-traefik-provider  # Persistent log storage
       - ./app:/app/app  # Mount source code for live debugging and editing
