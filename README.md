@@ -204,6 +204,17 @@ By default, all services automatically get:
 - ✅ **HTTP to HTTPS redirect** for security
 - ✅ **Automatic certificate renewal**
 
+### Certificate Storage
+
+Let's Encrypt certificates are stored in a **local Docker volume** (`letsencrypt-data`) rather than on NAS/NFS storage. This design choice ensures:
+
+- **Proper permissions**: ACME requires strict 600 permissions on `acme.json`, which NFS often can't provide
+- **Reliability**: No NFS permission conflicts or mount issues
+- **Simplicity**: Traefik manages everything automatically
+- **Low risk**: With wildcard certificates (`*.domain.com`), only one certificate is needed for all services
+
+Since Let's Encrypt certificates are free and automatically renewable, losing the local volume simply triggers a new certificate request, well within rate limits for wildcard certificates.
+
 ### Examples
 
 #### Basic Web Application (HTTPS by default)

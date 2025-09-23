@@ -17,7 +17,7 @@ services:
       - ./config/provider-config.yaml:/app/config/provider-config.yaml:ro
       - ./config/ssh-hosts.yaml:/app/config/ssh-hosts.yaml:ro
       - ./config/static-routes.yaml:/app/config/static-routes.yaml:ro  # Optional: static routes
-      - ./ssh-keys:/app/ssh-keys:ro  # SSH keys for remote Docker hosts
+      - ./ssh-keys:/mnt/ssh-keys:ro  # Source SSH keys (read-only, copied during startup)
       - ./logs:/var/log/sb-traefik-provider  # Persistent log storage
     environment:
       - LOG_LEVEL=INFO
@@ -72,18 +72,25 @@ services:
       - traefik
     depends_on:
       - sb-traefik-http-provider
+    environment:
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}  # Set in .env file or environment
     env_file:
-      - .env  # Contains CF_DNS_API_TOKEN
+      - .env  # Contains CF_DNS_API_TOKEN (optional, can use environment variable instead)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Optional: for local container discovery
       - ./traefik-dynamic:/etc/traefik/dynamic:ro
-      - ./letsencrypt:/letsencrypt  # Let's Encrypt certificate storage
+      - letsencrypt-data:/letsencrypt  # Local volume for Let's Encrypt certificates (not on NAS)
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/ping"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  letsencrypt-data:
+    driver: local  # Local Docker volume for Let's Encrypt certificates
+    # Note: Certificates stored locally, not on NAS, for permission compatibility
 
 networks:
   traefik:
