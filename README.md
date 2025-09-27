@@ -4,11 +4,13 @@ A high-performance FastAPI-based HTTP provider for Traefik that discovers Docker
 
 ## Features
 
-- **Multi-host Docker Discovery**: Discover containers across multiple Docker hosts via SSH
+- **Multi-host Docker Discovery**: Discover containers across multiple Docker hosts via Tailscale SSH
 - **Dynamic Configuration**: Automatically generate Traefik routing configuration from container labels
 - **Simplified Label Syntax**: Uses `snadboy.revp` labels for easier container configuration
-- **Proper Hostname Resolution**: Service URLs use actual hostnames from SSH config for reliable routing
-- **Robust SSH Key Management**: Automatic key copying, permission fixing, and NFS/NAS compatibility
+- **Tailscale MagicDNS**: Leverages Tailscale's MagicDNS (100.100.100.100) for automatic hostname resolution
+- **Bridge Networking**: Proper container isolation with explicit port mappings instead of host networking
+- **Automatic SSH Host Keys**: Pre-populates SSH known_hosts on startup for seamless connectivity
+- **Zero-Config Authentication**: Uses Tailscale for authentication - no SSH keys required
 - **FastAPI Framework**: Native async/await support with automatic API documentation
 - **Type Safety**: Pydantic models for request/response validation
 - **Health Checks**: Endpoints for monitoring provider health
@@ -38,7 +40,7 @@ cd sb-traefik-http-provider/examples/
 
 ```bash
 # Create required directories
-mkdir -p config ssh-keys traefik-dynamic logs
+mkdir -p config traefik-dynamic logs
 
 # Copy and customize configuration files
 cp ../config/*.example.yaml config/
@@ -46,7 +48,7 @@ cp ../traefik-dynamic/*.example.yml traefik-dynamic/
 cp ../.env.example .env
 
 # Edit configurations for your setup
-nano config/ssh-hosts.yaml     # Define your Docker hosts
+nano config/ssh-hosts.yaml     # Define your Docker hosts with Tailscale hostnames
 nano .env                       # Add Cloudflare API token
 nano docker-compose.yml        # Update domain names
 ```
@@ -73,29 +75,19 @@ That's it! Your containers with `snadboy.revp` labels will now be automatically 
 
 For development or building from source:
 
-### 1. Setup SSH Keys
+### 1. Setup Tailscale
 
-**SSH Key Requirements:**
-- Private keys must have `600` permissions (readable only by owner)
-- Keys are automatically copied into the container during startup with proper permissions
-- Supports NFS/NAS mounted directories (source can be read-only)
-- Intelligent file detection with size validation to prevent empty key files
-- Comprehensive validation and clear error messages for troubleshooting
+**Tailscale Requirements:**
+- Install Tailscale on all Docker hosts
+- Enable SSH in Tailscale: `tailscale up --ssh`
+- Ensure all hosts are on the same Tailnet
+- Use Tailscale hostnames (e.g., `host.tail-scale.ts.net`) in configuration
 
-**Setup SSH Keys:**
-```bash
-# Create SSH keys directory
-mkdir -p ssh-keys
-
-# Copy your SSH private key
-cp /path/to/your/private-key ssh-keys/id_ssh
-
-# Set proper permissions (critical for SSH)
-chmod 600 ssh-keys/id_ssh
-```
-
-**NFS/NAS Compatibility:**
-If your SSH keys are on a read-only NFS/NAS mount, that's fine! The container will copy keys and set proper permissions automatically.
+**Benefits:**
+- No SSH key management required
+- Automatic encryption and authentication
+- Zero-trust network security
+- Simplified host access management
 
 ### 2. Configure SSH Hosts
 
@@ -109,18 +101,20 @@ Edit `config/ssh-hosts.yaml` to define your Docker hosts:
 ```yaml
 hosts:
   dev:
-    hostname: host-dev.example.com
+    hostname: dev  # Tailscale hostname (resolved via MagicDNS)
     user: docker
     port: 22
     description: Development Docker host
     enabled: true
   prod:
-    hostname: host-prod.example.com
+    hostname: prod  # Tailscale hostname (resolved via MagicDNS)
     user: docker
     port: 22
     description: Production Docker host
     enabled: true
 ```
+
+**Note**: Use short Tailscale hostnames (e.g., `dev`, `prod`) rather than full domain names. MagicDNS will automatically resolve these through the configured DNS server (100.100.100.100).
 
 ### 2. Configure Provider
 
@@ -502,7 +496,7 @@ Monitor the health of all configured SSH hosts:
 Comprehensive debugging data including:
 - **Label Parsing**: Containers with snadboy labels, valid configurations, parsing errors
 - **Static Routes**: Loaded routes and configuration errors
-- **SSH Diagnostics**: Key files, connection timeouts, permission errors
+- **SSH Diagnostics**: Tailscale connection status, authentication errors, host availability
 
 ### Example API Usage
 
@@ -674,12 +668,12 @@ Enable with `LOG_JSON=true` for log aggregation systems:
 ## Architecture
 
 ```
-┌─────────────────┐     SSH      ┌──────────────┐
-│                 ├─────────────► │ Docker Host1 │
-│ FastAPI Provider│               └──────────────┘
-│   (Async)       │     SSH      ┌──────────────┐
-│                 ├─────────────► │ Docker Host2 │
-└────────┬────────┘               └──────────────┘
+┌─────────────────┐  Tailscale SSH  ┌──────────────┐
+│                 ├─────────────────►│ Docker Host1 │
+│ FastAPI Provider│                  └──────────────┘
+│   (Bridge Net)  │  Tailscale SSH  ┌──────────────┐
+│  DNS: 100.100.* ├─────────────────►│ Docker Host2 │
+└────────┬────────┘                  └──────────────┘
          │
          │ HTTP (Async)
          │ /api/traefik/config
@@ -689,12 +683,22 @@ Enable with `LOG_JSON=true` for log aggregation systems:
    └──────────┘
 ```
 
+### Networking Architecture
+
+- **Bridge Networking**: Provider runs in Docker bridge network for proper isolation
+- **MagicDNS (100.100.100.100)**: Automatic Tailscale hostname resolution
+- **Port Mapping**: Provider exposes port 8081 (host) → 8080 (container)
+- **SSH Host Keys**: Automatically pre-populated at startup using ssh-keyscan
+- **Container Communication**: Traefik reaches provider via container name on Docker network
+
 ### Hostname Resolution
 
-The provider uses the actual hostnames from SSH configuration (e.g., `host-media-arr.isnadboy.com`) when building service URLs, rather than SSH alias names (e.g., `media-arr`). This ensures:
-- Traefik can always resolve backend addresses
-- No dependency on DNS tricks or Tailscale MagicDNS
-- Consistent routing using the same hostnames that work for SSH connections
+The provider leverages Tailscale MagicDNS for seamless hostname resolution:
+- **MagicDNS Server**: Configured to use `100.100.100.100` for automatic Tailscale hostname resolution
+- **Short Hostnames**: Use simple names like `fabric`, `dev`, `prod` in configuration
+- **Automatic Resolution**: MagicDNS transparently resolves these to full Tailscale addresses
+- **SSH Host Keys**: Pre-populated on container startup via ssh-keyscan for immediate connectivity
+- **No Manual DNS Configuration**: Everything works automatically through Tailscale's infrastructure
 
 ### Technology Stack
 
@@ -718,41 +722,39 @@ The provider uses the actual hostnames from SSH configuration (e.g., `host-media
 
 ### SSH Hosts Configuration (`config/ssh-hosts.yaml`)
 
-- `hostname`: Host address or domain
+- `hostname`: Tailscale hostname or MagicDNS name
 - `user`: SSH username
 - `port`: SSH port (default 22)
-- `key_file`: Path to SSH private key
 - `enabled`: Whether host is active
 - `description`: Human-readable description
 
 ## Troubleshooting
 
-### SSH Key Issues
+### Tailscale SSH Issues
 
-**Error: "SSH private key not found"**
+**Error: "Failed to connect to host"**
 ```bash
-# Ensure SSH key exists in the correct location
-ls -la ssh-keys/id_ssh
+# Verify Tailscale is running on the host
+tailscale status
 
-# Check permissions (should be 600)
-stat -c %a ssh-keys/id_ssh
+# Ensure SSH is enabled
+tailscale up --ssh
 ```
 
-**Error: "SSH private key has incorrect permissions"**
+**Error: "Host not found"**
 ```bash
-# Fix permissions
-chmod 600 ssh-keys/id_ssh
+# Check Tailscale hostname
+tailscale status | grep "host-name"
 
-# Verify
-ls -la ssh-keys/id_ssh
-# Should show: -rw------- 1 user user
+# Verify host is in your Tailnet
+tailscale status
 ```
 
-**Error: "Read-only file system"**
-This indicates the SSH keys directory is mounted read-only. The container will automatically copy keys and set proper permissions during startup.
-
-**Error: "Could not update key permissions"**
-This is expected on NFS/NAS mounts. The container handles this automatically by copying keys to a writable location.
+**Error: "Authentication failed"**
+Ensure the user exists on the target host and has Docker permissions:
+```bash
+ssh user@host.tail-scale.ts.net docker ps
+```
 
 ### Connection Issues
 

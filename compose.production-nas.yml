@@ -1,41 +1,42 @@
 services:
   # SB Traefik HTTP Provider Service
   sb-traefik-http-provider:
-    # Use published image from GitHub Container Registry
     image: ghcr.io/snadboy/sb-traefik-http-provider:latest
-
-    # Alternative: Build locally from source
-    # build:
-    #   context: .
-    #   dockerfile: docker/Dockerfile.production
     container_name: sb-traefik-http-provider
     restart: unless-stopped
+    dns:
+      - 100.100.100.100  # Tailscale MagicDNS for hostname resolution
     ports:
-      - "8081:8080"  # HTTP provider endpoint
-      - "9090:9090"  # Prometheus metrics (optional)
-    volumes:
-      - ./config/provider-config.yaml:/app/config/provider-config.yaml:ro
-      - ./config/ssh-hosts.yaml:/app/config/ssh-hosts.yaml:ro
-      - ./config/static-routes.yaml:/app/config/static-routes.yaml:ro  # Optional: static routes
-      - ./ssh-keys:/mnt/ssh-keys:ro  # Source SSH keys (read-only, copied during startup)
-      - ./logs:/var/log/sb-traefik-provider  # Persistent log storage
+      - "8081:8080"  # Expose provider API
+    networks:
+      - traefik
     environment:
       - LOG_LEVEL=INFO
       - LOG_DIR=/var/log/sb-traefik-provider
       - LOG_JSON=false  # Set to true for JSON logging
       - PYTHONUNBUFFERED=1
       - WORKERS=2  # Number of uvicorn workers
-    networks:
-      - traefik
     labels:
-      - "snadboy.revp.8080.domain=sb-traefik-provider-api.example.com"
-      - "snadboy.revp.9090.domain=sb-traefik-provider-metrics.example.com"
+      - "snadboy.revp.8080.domain=sb-traefik-provider-api.isnadboy.com"
+      - "snadboy.revp.9090.domain=sb-traefik-provider-metrics.isnadboy.com"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    volumes:
+      - type: volume
+        source: nas-data
+        target: /app/config
+        read_only: true
+        volume:
+          subpath: sb-traefik-http-provider/config
+      - type: volume
+        source: nas-data
+        target: /app/logs
+        volume:
+          subpath: sb-traefik-http-provider/logs
 
   # Traefik Instance
   traefik:
@@ -56,7 +57,7 @@ services:
       - "--log.level=INFO"
       - "--ping"
       # Let's Encrypt configuration with Cloudflare DNS challenge
-      - "--certificatesresolvers.letsencrypt.acme.email=your-email@example.com"
+      - "--certificatesresolvers.letsencrypt.acme.email=dschless@gmail.com"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
@@ -71,15 +72,22 @@ services:
     networks:
       - traefik
     depends_on:
-      - sb-traefik-http-provider
+      sb-traefik-http-provider:
+        condition: service_healthy
     environment:
-      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}  # Set in .env file or environment
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}  # IMPORTANT: Set in .env file or environment
     env_file:
-      - .env  # Contains CF_DNS_API_TOKEN (optional, can use environment variable instead)
+      - .env  # Contains CF_DNS_API_TOKEN
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Optional: for local container discovery
-      - ./traefik-dynamic:/etc/traefik/dynamic:ro
-      - letsencrypt-data:/letsencrypt  # Local volume for Let's Encrypt certificates (not on NAS)
+      - type: volume
+        source: nas-data
+        target: /etc/traefik/dynamic
+        volume:
+          subpath: traefik/traefik-dynamic
+          
+      # IMPORTANT: Let's Encrypt storage must be local (not NAS) for permissions
+      - letsencrypt-data:/letsencrypt
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/ping"]
       interval: 30s
@@ -88,9 +96,11 @@ services:
       start_period: 40s
 
 volumes:
+  nas-data:
+    external: true  # Created by volume-init-compose.yml
   letsencrypt-data:
     driver: local  # Local Docker volume for Let's Encrypt certificates
-    # Note: Certificates stored locally, not on NAS, for permission compatibility
+    # Note: Certificates stored locally, not on NAS, due to ACME permission requirements
 
 networks:
   traefik:

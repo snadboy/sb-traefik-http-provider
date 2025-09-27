@@ -1,33 +1,34 @@
 # SSH Hosts Configuration Example
-# Copy to ssh-hosts.yaml and update with your hosts
+# Copy to ssh-hosts.yaml and update with your Tailscale hosts
+# Note: Tailscale authentication is used - no SSH keys required!
+# Ensure Tailscale is installed and SSH is enabled: tailscale up --ssh
 
 defaults:
   user: docker
   port: 22
-  key_file: /app/ssh-keys/id_ssh
   enabled: true
 
 hosts:
-  # Development environment
+  # Development environment (Tailscale hostname)
   dev:
-    hostname: host-dev.example.com
+    hostname: host-dev.tail-scale.ts.net
     user: docker
     port: 22
     description: Development Docker host
     enabled: true
 
-  # Production environment
+  # Production environment (Tailscale hostname)
   prod:
-    hostname: host-prod.example.com
+    hostname: host-prod.tail-scale.ts.net
     user: docker
     port: 22
     description: Production Docker host
     enabled: true
 
-  # Staging environment
+  # Staging environment (Tailscale hostname or MagicDNS)
   staging:
-    hostname: 192.168.1.100
+    hostname: staging.tail-scale.ts.net
     user: docker
-    port: 2222
+    port: 22
     description: Staging Docker host
     enabled: false

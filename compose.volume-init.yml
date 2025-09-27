@@ -1,0 +1,23 @@
+# Volume initialization compose file
+# Run once with: docker-compose -f volume-init-compose.yml up
+# This creates the nas-data volume for use by other containers
+
+services:
+  init-nas-volume:
+    image: alpine:latest
+    container_name: nas-volume-initializer
+    command: echo "NAS volume 'nas-data' created successfully"
+    volumes:
+      - nas-data:/nas-data
+    restart: "no"  # Run once and exit
+
+volumes:
+  nas-data:
+    name: nas-data  # Explicit name for external reference
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=host-unas-able.isnadboy.com,rw,soft,timeo=600,retrans=2
+      device: :/var/nfs/shared/docker/switchboard/data
+
+networks: {}

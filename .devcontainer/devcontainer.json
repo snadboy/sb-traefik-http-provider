@@ -1,0 +1,10 @@
+{
+  "name": "Volume Browser",
+  "image": "alpine:latest",
+  "mounts": [
+    "source=traekik_letsencrypt-data,target=/volumes/letsencrypt,type=volume",
+    "source=nas-data,target=/volumes/nas-data,type=volume"
+  ],
+  "postCreateCommand": "apk add --no-cache nano vim curl",
+  "remoteUser": "root"
+}

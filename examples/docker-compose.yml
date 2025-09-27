@@ -28,9 +28,6 @@ services:
       - ./config/ssh-hosts.yaml:/app/config/ssh-hosts.yaml:ro
       - ./config/static-routes.yaml:/app/config/static-routes.yaml:ro  # Optional
 
-      # SSH keys for accessing remote Docker hosts
-      - ./ssh-keys:/app/ssh-keys:ro
-
       # Persistent log storage
       - ./logs:/var/log/sb-traefik-provider
     environment:

@@ -6,77 +6,38 @@ set -e
 # Create log directory if it doesn't exist
 mkdir -p ${LOG_DIR:-/var/log/sb-traefik-provider}
 
-# Setup SSH keys with proper permissions
-echo "Setting up SSH keys..."
-mkdir -p /app/ssh-keys
-chmod 700 /app/ssh-keys
+# Tailscale authentication with MagicDNS
+echo "Using Tailscale SSH authentication with MagicDNS resolution"
+echo "Ensure Tailscale is installed and SSH is enabled on all Docker hosts:"
+echo "  tailscale up --ssh"
+echo "MagicDNS (100.100.100.100) will resolve Tailscale hostnames automatically"
 
-# Copy SSH keys from mounted source and set proper permissions
-if [ -d "/mnt/ssh-keys" ]; then
-    echo "Copying SSH keys from /mnt/ssh-keys to /app/ssh-keys"
+# Pre-populate SSH known_hosts for Tailscale hosts
+echo "Pre-populating SSH known_hosts for configured Tailscale hosts..."
+mkdir -p /root/.ssh
+touch /root/.ssh/known_hosts
+chmod 600 /root/.ssh/known_hosts
 
-    # Look for SSH keys in multiple locations (prefer root directory)
-    SSH_KEY_COPIED=false
+# Parse ssh-hosts.yaml to get enabled hostnames
+if [ -f "/app/config/ssh-hosts.yaml" ]; then
+    # Extract hostname values for enabled hosts
+    HOSTNAMES=$(awk '
+        /^[[:space:]]*[a-zA-Z0-9_-]+:/ { current_host = $1; gsub(/:$/, "", current_host) }
+        /^[[:space:]]*hostname:/ { hostname = $2 }
+        /^[[:space:]]*enabled:[[:space:]]*true/ { if (hostname) print hostname; hostname = "" }
+    ' /app/config/ssh-hosts.yaml)
 
-    # First priority: id_ssh in mount root
-    if [ -f "/mnt/ssh-keys/id_ssh" ]; then
-        SOURCE_SIZE=$(stat -c%s /mnt/ssh-keys/id_ssh)
-        if [ "$SOURCE_SIZE" -gt 0 ]; then
-            echo "Found SSH key: /mnt/ssh-keys/id_ssh (${SOURCE_SIZE} bytes)"
-            cp /mnt/ssh-keys/id_ssh /app/ssh-keys/
-            chmod 600 /app/ssh-keys/id_ssh
-            COPIED_SIZE=$(stat -c%s /app/ssh-keys/id_ssh)
-            echo "Copied id_ssh successfully (${COPIED_SIZE} bytes)"
-            SSH_KEY_COPIED=true
-        else
-            echo "Warning: /mnt/ssh-keys/id_ssh is empty, skipping"
+    for hostname in $HOSTNAMES; do
+        if [ -n "$hostname" ]; then
+            echo "Scanning SSH host keys for $hostname..."
+            timeout 10 ssh-keyscan -H "$hostname" >> /root/.ssh/known_hosts 2>/dev/null || echo "Warning: Could not scan keys for $hostname"
         fi
-    fi
+    done
 
-    # Second priority: ssh-keys subdirectory (only if not already copied)
-    if [ "$SSH_KEY_COPIED" = false ] && [ -d "/mnt/ssh-keys/ssh-keys" ]; then
-        echo "Checking ssh-keys subdirectory"
-        if [ -f "/mnt/ssh-keys/ssh-keys/id_ssh" ]; then
-            SOURCE_SIZE=$(stat -c%s /mnt/ssh-keys/ssh-keys/id_ssh)
-            if [ "$SOURCE_SIZE" -gt 0 ]; then
-                echo "Found SSH key: /mnt/ssh-keys/ssh-keys/id_ssh (${SOURCE_SIZE} bytes)"
-                cp /mnt/ssh-keys/ssh-keys/id_ssh /app/ssh-keys/
-                chmod 600 /app/ssh-keys/id_ssh
-                COPIED_SIZE=$(stat -c%s /app/ssh-keys/id_ssh)
-                echo "Copied id_ssh successfully (${COPIED_SIZE} bytes)"
-                SSH_KEY_COPIED=true
-            else
-                echo "Warning: /mnt/ssh-keys/ssh-keys/id_ssh is empty, skipping"
-            fi
-        fi
-    fi
-
-    if [ "$SSH_KEY_COPIED" = false ]; then
-        echo "ERROR: No valid SSH key found in mounted directories"
-    fi
-
-    echo "SSH keys setup completed"
+    echo "SSH known_hosts populated with $(wc -l < /root/.ssh/known_hosts) host key entries"
 else
-    echo "ERROR: SSH keys directory /mnt/ssh-keys not found!"
-    echo "Please mount your SSH keys directory to /mnt/ssh-keys:ro"
-    exit 1
+    echo "Warning: SSH hosts config file not found at /app/config/ssh-hosts.yaml"
 fi
-
-# Validate SSH keys exist and are readable
-if [ ! -f "/app/ssh-keys/id_ssh" ]; then
-    echo "ERROR: SSH private key /app/ssh-keys/id_ssh not found!"
-    echo "Expected SSH key file in mounted directory: ./ssh-keys/id_ssh"
-    exit 1
-fi
-
-# Check SSH key permissions
-KEY_PERMS=$(stat -c %a /app/ssh-keys/id_ssh)
-if [ "$KEY_PERMS" != "600" ]; then
-    echo "Warning: SSH key permissions are $KEY_PERMS, fixing to 600"
-    chmod 600 /app/ssh-keys/id_ssh
-fi
-
-echo "SSH key validation completed successfully"
 
 # Set up logrotate if config exists
 if [ -f /app/config/logrotate.conf ]; then

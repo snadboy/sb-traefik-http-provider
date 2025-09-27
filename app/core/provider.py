@@ -57,30 +57,8 @@ class TraefikProvider:
         }
 
     def _initialize_client(self):
-        """Initialize SSH Docker client with validation"""
+        """Initialize SSH Docker client with Tailscale authentication"""
         try:
-            # Validate SSH key file exists and has proper permissions
-            ssh_key_path = Path('/app/ssh-keys/id_ssh')
-            if not ssh_key_path.exists():
-                error_msg = (
-                    f"SSH private key not found at {ssh_key_path}. "
-                    "Ensure SSH key is mounted properly and exists in the source directory."
-                )
-                logger.error(error_msg)
-                raise FileNotFoundError(error_msg)
-
-            # Check SSH key permissions
-            key_stat = ssh_key_path.stat()
-            key_perms = oct(key_stat.st_mode)[-3:]
-            if key_perms != '600':
-                error_msg = (
-                    f"SSH private key has incorrect permissions: {key_perms}. "
-                    f"Key must have 600 permissions for security. "
-                    f"Current key: {ssh_key_path}"
-                )
-                logger.error(error_msg)
-                raise PermissionError(error_msg)
-
             ssh_hosts_file = self.config.get('ssh_hosts_file', 'config/ssh-hosts.yaml')
             ssh_hosts_path = Path(ssh_hosts_file).resolve()
 
@@ -90,12 +68,13 @@ class TraefikProvider:
                 raise FileNotFoundError(error_msg)
 
             self.ssh_client = SSHDockerClient(config_file=ssh_hosts_path)
-            logger.info("SSH Docker client initialized successfully")
-            logger.info(f"Using SSH key: {ssh_key_path} (permissions: {key_perms})")
+            logger.info("SSH Docker client initialized successfully with Tailscale authentication")
+            logger.info(f"Using hosts configuration: {ssh_hosts_path}")
 
         except Exception as e:
             logger.error(f"CRITICAL: Failed to initialize SSH client: {e}")
             logger.error("This is a fatal error. The provider cannot function without SSH connectivity.")
+            logger.error("Ensure Tailscale is installed and SSH is enabled on all hosts: tailscale up --ssh")
             raise
 
     def _get_enabled_hosts(self) -> List[str]:
@@ -804,15 +783,7 @@ class TraefikProvider:
         }
 
     def get_ssh_diagnostics(self) -> Dict[str, Any]:
-        """Get SSH connection diagnostics"""
-        ssh_keys_dir = Path("ssh-keys")
-        key_files = []
-
-        if ssh_keys_dir.exists():
-            for key_file in ssh_keys_dir.glob("*"):
-                if key_file.is_file() and not key_file.name.startswith('.'):
-                    key_files.append(str(key_file))
-
+        """Get Tailscale SSH connection diagnostics"""
         enabled_hosts = self._get_enabled_hosts()
         reachable_hosts = len([h for h, s in self.ssh_host_status.items() if s.get('status') == 'connected'])
 
@@ -820,7 +791,7 @@ class TraefikProvider:
         permission_errors = len([h for h, s in self.ssh_host_status.items() if s.get('status') == 'permission'])
 
         return {
-            'key_files': key_files,
+            'tailscale_authentication': True,
             'connection_timeouts': timeouts,
             'permission_errors': permission_errors,
             'hosts_configured': len(enabled_hosts),

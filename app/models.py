@@ -185,8 +185,8 @@ class StaticRouteDiagnostics(BaseModel):
 
 
 class SSHDiagnostics(BaseModel):
-    """SSH connection diagnostics"""
-    key_files: List[str] = Field(default_factory=list, description="SSH key files found")
+    """Tailscale SSH connection diagnostics"""
+    tailscale_authentication: bool = Field(default=True, description="Using Tailscale authentication")
     connection_timeouts: int = Field(default=0, description="Number of connection timeouts")
     permission_errors: int = Field(default=0, description="Number of permission errors")
     hosts_configured: int = Field(default=0, description="Total hosts configured")

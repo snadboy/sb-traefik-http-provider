@@ -27,9 +27,8 @@ COPY config/ ./config/
 # Copy entrypoint script
 COPY docker/docker-entrypoint.sh /entrypoint.sh
 
-# Create directories for SSH keys and logs, make entrypoint executable
-RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh && \
-    mkdir -p /var/log/sb-traefik-provider && \
+# Create log directory and make entrypoint executable
+RUN mkdir -p /var/log/sb-traefik-provider && \
     chmod 755 /var/log/sb-traefik-provider && \
     chmod +x /entrypoint.sh
 
