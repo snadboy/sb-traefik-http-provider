@@ -3,10 +3,14 @@ API routes for Traefik HTTP Provider
 """
 
 import logging
+import asyncio
+import subprocess
+import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query, HTTPException
 from app.core import TraefikProvider
+from app.utils.ssh_setup import scan_and_add_ssh_keys
 from app.models import (
     HealthResponse,
     ErrorResponse,
@@ -20,7 +24,15 @@ from app.models import (
     ExcludedContainer,
     ContainerDiagnostics,
     EnhancedConfigMetadata,
-    EnhancedTraefikConfigResponse
+    EnhancedTraefikConfigResponse,
+    EnvironmentDiagnosticsResponse,
+    ContainerInfoModel,
+    DNSConfigModel,
+    NetworkConfigModel,
+    TailscaleStatusModel,
+    SSHHostStatus,
+    CacheStatusModel,
+    EventListenerStatus
 )
 
 logger = logging.getLogger(__name__)
@@ -438,3 +450,408 @@ async def get_debug_info() -> DebugResponse:
     except Exception as e:
         logger.error(f"Failed to get debug information: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/api/ssh/test/{host}")
+async def test_ssh_connectivity(host: str) -> Dict[str, Any]:
+    """Test SSH connectivity to a specific host"""
+    logger.info(f"Testing SSH connectivity to host: {host}")
+
+    try:
+        provider = get_provider()
+
+        # Check if host is in configuration
+        enabled_hosts = provider._get_enabled_hosts()
+        if host not in enabled_hosts:
+            return {
+                "host": host,
+                "status": "error",
+                "message": f"Host '{host}' is not in enabled hosts list",
+                "enabled_hosts": enabled_hosts
+            }
+
+        # Get hostname from configuration
+        hostname = provider._get_ssh_hostname(host)
+
+        # Test DNS resolution
+        dns_test = subprocess.run(
+            ["nslookup", hostname],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        dns_resolved = dns_test.returncode == 0
+
+        # Test SSH port connectivity
+        port_test = subprocess.run(
+            ["timeout", "5", "bash", "-c", f"echo > /dev/tcp/{hostname}/22"],
+            capture_output=True,
+            text=True
+        )
+        port_open = port_test.returncode == 0
+
+        # Check known_hosts
+        known_hosts_path = "/root/.ssh/known_hosts"
+        host_in_known_hosts = False
+        if os.path.exists(known_hosts_path):
+            with open(known_hosts_path, 'r') as f:
+                known_hosts_content = f.read()
+                # Check for hashed entries (they start with |1|)
+                host_in_known_hosts = f"|1|" in known_hosts_content or hostname in known_hosts_content
+
+        # Try actual SSH connection
+        ssh_test_result = None
+        ssh_test_error = None
+        try:
+            # Simple SSH command to test connectivity
+            ssh_result = subprocess.run(
+                ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes",
+                 f"revp@{hostname}", "echo", "SSH_TEST_SUCCESS"],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            ssh_test_result = ssh_result.returncode == 0
+            ssh_test_error = ssh_result.stderr if not ssh_test_result else None
+        except Exception as e:
+            ssh_test_result = False
+            ssh_test_error = str(e)
+
+        # Try container discovery
+        container_count = 0
+        discovery_error = None
+        try:
+            containers = await provider.discover_containers(host)
+            container_count = len(containers)
+        except Exception as e:
+            discovery_error = str(e)
+
+        return {
+            "host": host,
+            "hostname": hostname,
+            "status": "success" if ssh_test_result else "failed",
+            "diagnostics": {
+                "dns_resolved": dns_resolved,
+                "port_22_open": port_open,
+                "host_in_known_hosts": host_in_known_hosts,
+                "ssh_connection_test": ssh_test_result,
+                "container_discovery": {
+                    "success": discovery_error is None,
+                    "container_count": container_count,
+                    "error": discovery_error
+                }
+            },
+            "errors": {
+                "ssh_error": ssh_test_error,
+                "discovery_error": discovery_error
+            },
+            "recommendations": _get_ssh_recommendations(
+                dns_resolved, port_open, host_in_known_hosts, ssh_test_result, ssh_test_error
+            )
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to test SSH connectivity: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/ssh/scan-keys/{host}")
+async def scan_ssh_keys(host: str) -> Dict[str, Any]:
+    """Manually scan and add SSH keys for a host"""
+    logger.info(f"Manually scanning SSH keys for host: {host}")
+
+    try:
+        provider = get_provider()
+        hostname = provider._get_ssh_hostname(host)
+
+        # Use the shared SSH setup utility function
+        result = scan_and_add_ssh_keys(hostname, timeout=15, retries=3)
+
+        # Add the original host parameter to the result
+        result["host"] = host
+        result["hostname"] = hostname
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to scan SSH keys: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/ssh/known-hosts")
+async def get_known_hosts() -> Dict[str, Any]:
+    """Get current SSH known_hosts information"""
+    try:
+        known_hosts_path = "/root/.ssh/known_hosts"
+
+        if not os.path.exists(known_hosts_path):
+            return {
+                "status": "empty",
+                "message": "No known_hosts file exists",
+                "total_entries": 0
+            }
+
+        with open(known_hosts_path, 'r') as f:
+            lines = f.readlines()
+
+        # Count hashed vs unhashed entries
+        hashed_count = sum(1 for line in lines if line.startswith('|1|'))
+        unhashed_count = len(lines) - hashed_count
+
+        return {
+            "status": "ok",
+            "total_entries": len(lines),
+            "hashed_entries": hashed_count,
+            "unhashed_entries": unhashed_count,
+            "file_path": known_hosts_path,
+            "file_size_bytes": os.path.getsize(known_hosts_path)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get known_hosts info: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _get_ssh_recommendations(dns_resolved: bool, port_open: bool,
+                            host_in_known_hosts: bool, ssh_test: bool,
+                            ssh_error: str) -> list:
+    """Generate recommendations based on SSH test results"""
+    recommendations = []
+
+    if not dns_resolved:
+        recommendations.append("DNS resolution failed - check hostname and network connectivity")
+        recommendations.append("Ensure Tailscale MagicDNS is working (100.100.100.100)")
+
+    if dns_resolved and not port_open:
+        recommendations.append("Port 22 is not accessible - check if SSH is enabled on target host")
+        recommendations.append("Run 'tailscale up --ssh' on the target host")
+
+    if port_open and not host_in_known_hosts:
+        recommendations.append("Host key not in known_hosts - use /api/ssh/scan-keys/{host} to add it")
+
+    if ssh_error and "Host key verification failed" in ssh_error:
+        recommendations.append("Host key verification failed - the host key has changed or is not trusted")
+        recommendations.append("Use /api/ssh/scan-keys/{host} to update the host key")
+
+    if ssh_error and "Permission denied" in ssh_error:
+        recommendations.append("Authentication failed - check Tailscale SSH is enabled")
+        recommendations.append("Ensure the user 'revp' exists on the target host")
+
+    if not recommendations and ssh_test:
+        recommendations.append("SSH connectivity is working properly")
+
+    return recommendations
+
+
+@router.get("/api/diagnostics/environment", response_model=EnvironmentDiagnosticsResponse)
+async def get_environment_diagnostics() -> EnvironmentDiagnosticsResponse:
+    """
+    Get comprehensive environment diagnostics including:
+    - Container image and version info
+    - DNS configuration and search order
+    - Network configuration
+    - Tailscale availability and hostname resolution
+    - SSH connectivity to remote hosts
+    - Cache status
+    - Event listener status
+    """
+    try:
+        provider = get_provider()
+
+        # Container info
+        container_info = _get_container_info()
+
+        # DNS configuration
+        dns_config = _get_dns_config()
+
+        # Network configuration
+        network_config = _get_network_config()
+
+        # Tailscale status
+        tailscale_status = _get_tailscale_status(provider)
+
+        # SSH connectivity
+        ssh_connectivity = await _get_ssh_connectivity(provider)
+
+        # Cache status
+        cache_status = provider.get_cache_info()
+
+        # Event listener status
+        event_listeners = provider.get_event_listener_status()
+
+        return EnvironmentDiagnosticsResponse(
+            container_info=ContainerInfoModel(**container_info),
+            dns_config=DNSConfigModel(**dns_config),
+            network_config=NetworkConfigModel(**network_config),
+            tailscale_status=TailscaleStatusModel(**tailscale_status),
+            ssh_connectivity={k: SSHHostStatus(**v) for k, v in ssh_connectivity.items()},
+            cache_status=CacheStatusModel(**cache_status),
+            event_listeners={k: EventListenerStatus(**v) for k, v in event_listeners.items()}
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to gather environment diagnostics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _get_container_info() -> Dict[str, Any]:
+    """Get information about the running container"""
+    try:
+        # Try to read from Docker environment
+        hostname = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
+
+        # Try to get image info from environment or Docker
+        image = os.getenv("HOSTNAME", "unknown")
+
+        return {
+            "image": image,
+            "image_digest": None,  # Would need Docker API access
+            "created": None,
+            "started": None
+        }
+    except Exception as e:
+        logger.warning(f"Could not get container info: {e}")
+        return {
+            "image": "unknown",
+            "image_digest": None,
+            "created": None,
+            "started": None
+        }
+
+
+def _get_dns_config() -> Dict[str, Any]:
+    """Get DNS configuration"""
+    try:
+        with open("/etc/resolv.conf", "r") as f:
+            resolv_content = f.read()
+
+        nameservers = []
+        search_domains = []
+        ext_servers = []
+
+        for line in resolv_content.split("\n"):
+            line = line.strip()
+            if line.startswith("nameserver"):
+                nameservers.append(line.split()[1])
+            elif line.startswith("search"):
+                search_domains = line.split()[1:]
+            elif line.startswith("# ExtServers:"):
+                # Extract ExtServers from Docker comment
+                ext_part = line.split("# ExtServers:")[1].strip()
+                if ext_part.startswith("[") and ext_part.endswith("]"):
+                    ext_servers_raw = ext_part[1:-1].split(",")
+                    for srv in ext_servers_raw:
+                        srv = srv.strip()
+                        if srv.startswith("host(") and srv.endswith(")"):
+                            ext_servers.append(srv[5:-1])
+                        else:
+                            ext_servers.append(srv)
+
+        return {
+            "nameservers": nameservers,
+            "search_domains": search_domains,
+            "ext_servers": ext_servers,
+            "resolv_conf": resolv_content
+        }
+    except Exception as e:
+        logger.warning(f"Could not read DNS config: {e}")
+        return {
+            "nameservers": [],
+            "search_domains": [],
+            "ext_servers": [],
+            "resolv_conf": None
+        }
+
+
+def _get_network_config() -> Dict[str, Any]:
+    """Get network configuration"""
+    try:
+        # Get hostname
+        hostname_result = subprocess.run(["hostname"], capture_output=True, text=True)
+        hostname = hostname_result.stdout.strip()
+
+        # Try to get IP addresses
+        ip_result = subprocess.run(["hostname", "-I"], capture_output=True, text=True)
+        ips = ip_result.stdout.strip().split()
+
+        return {
+            "networks": ["traefik"],  # Known from compose
+            "ip_addresses": {"traefik": ips[0] if ips else "unknown"},
+            "gateway": None  # Would need route command
+        }
+    except Exception as e:
+        logger.warning(f"Could not get network config: {e}")
+        return {
+            "networks": [],
+            "ip_addresses": {},
+            "gateway": None
+        }
+
+
+def _get_tailscale_status(provider: TraefikProvider) -> Dict[str, Any]:
+    """Get Tailscale status"""
+    try:
+        enabled_hosts = provider._get_enabled_hosts()
+        can_resolve = {}
+
+        for host in enabled_hosts:
+            try:
+                result = subprocess.run(
+                    ["getent", "hosts", host],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                if result.returncode == 0:
+                    ip = result.stdout.strip().split()[0]
+                    can_resolve[host] = ip
+            except Exception:
+                pass
+
+        # Count SSH keys
+        ssh_keys_scanned = 0
+        try:
+            if os.path.exists("/root/.ssh/known_hosts"):
+                with open("/root/.ssh/known_hosts", "r") as f:
+                    ssh_keys_scanned = len(f.readlines())
+        except Exception:
+            pass
+
+        return {
+            "available": len(can_resolve) > 0,
+            "can_resolve": can_resolve,
+            "ssh_keys_scanned": ssh_keys_scanned
+        }
+    except Exception as e:
+        logger.warning(f"Could not get Tailscale status: {e}")
+        return {
+            "available": False,
+            "can_resolve": {},
+            "ssh_keys_scanned": 0
+        }
+
+
+async def _get_ssh_connectivity(provider: TraefikProvider) -> Dict[str, Dict[str, Any]]:
+    """Get SSH connectivity status for all hosts"""
+    enabled_hosts = provider._get_enabled_hosts()
+    connectivity = {}
+
+    for host in enabled_hosts:
+        try:
+            await provider.check_ssh_host_health(host)
+            host_status = provider.ssh_host_status.get(host, {})
+
+            connectivity[host] = {
+                "reachable": host_status.get("status") == "connected",
+                "containers": host_status.get("container_count", 0),
+                "last_check": host_status.get("last_attempt")
+            }
+        except Exception as e:
+            logger.warning(f"Could not check SSH connectivity for {host}: {e}")
+            connectivity[host] = {
+                "reachable": False,
+                "containers": 0,
+                "last_check": None
+            }
+
+    return connectivity

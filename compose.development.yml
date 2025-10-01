@@ -6,8 +6,7 @@ services:
       dockerfile: docker/Dockerfile
     container_name: sb-traefik-http-provider
     restart: unless-stopped
-    dns:
-      - 100.100.100.100  # Tailscale MagicDNS for hostname resolution
+    # Docker will use host DNS configuration which includes Tailscale MagicDNS
     ports:
       - "8081:8080"  # Expose provider API
     networks:

@@ -217,3 +217,65 @@ class EnhancedTraefikConfigResponse(BaseModel):
 
     class Config:
         populate_by_name = True
+
+
+class ContainerInfoModel(BaseModel):
+    """Container information"""
+    image: str = Field(..., description="Container image")
+    image_digest: Optional[str] = Field(None, description="Image digest/SHA")
+    created: Optional[str] = Field(None, description="Container creation timestamp")
+    started: Optional[str] = Field(None, description="Container start timestamp")
+
+
+class DNSConfigModel(BaseModel):
+    """DNS configuration"""
+    nameservers: List[str] = Field(default_factory=list, description="DNS nameservers")
+    search_domains: List[str] = Field(default_factory=list, description="DNS search domains")
+    ext_servers: List[str] = Field(default_factory=list, description="External DNS servers")
+    resolv_conf: Optional[str] = Field(None, description="Contents of /etc/resolv.conf")
+
+
+class NetworkConfigModel(BaseModel):
+    """Network configuration"""
+    networks: List[str] = Field(default_factory=list, description="Network names")
+    ip_addresses: Dict[str, str] = Field(default_factory=dict, description="IP addresses by network")
+    gateway: Optional[str] = Field(None, description="Default gateway")
+
+
+class TailscaleStatusModel(BaseModel):
+    """Tailscale status"""
+    available: bool = Field(..., description="Whether Tailscale resolution is available")
+    can_resolve: Dict[str, str] = Field(default_factory=dict, description="Hosts that can be resolved")
+    ssh_keys_scanned: int = Field(default=0, description="Number of SSH keys scanned")
+
+
+class SSHHostStatus(BaseModel):
+    """SSH host connectivity status"""
+    reachable: bool = Field(..., description="Whether host is reachable")
+    containers: int = Field(default=0, description="Number of containers")
+    last_check: Optional[str] = Field(None, description="Last check timestamp")
+
+
+class CacheStatusModel(BaseModel):
+    """Cache status"""
+    cached: bool = Field(..., description="Whether config is cached")
+    last_update: Optional[str] = Field(None, description="Last cache update timestamp")
+    cache_age_seconds: Optional[int] = Field(None, description="Age of cache in seconds")
+    services_count: int = Field(default=0, description="Number of services in cache")
+
+
+class EventListenerStatus(BaseModel):
+    """Event listener status"""
+    status: str = Field(..., description="Connection status")
+    events_received: int = Field(default=0, description="Number of events received")
+
+
+class EnvironmentDiagnosticsResponse(BaseModel):
+    """Complete environment diagnostics"""
+    container_info: ContainerInfoModel = Field(..., description="Container information")
+    dns_config: DNSConfigModel = Field(..., description="DNS configuration")
+    network_config: NetworkConfigModel = Field(..., description="Network configuration")
+    tailscale_status: TailscaleStatusModel = Field(..., description="Tailscale status")
+    ssh_connectivity: Dict[str, SSHHostStatus] = Field(default_factory=dict, description="SSH host connectivity")
+    cache_status: CacheStatusModel = Field(..., description="Cache status")
+    event_listeners: Dict[str, EventListenerStatus] = Field(default_factory=dict, description="Event listener status")

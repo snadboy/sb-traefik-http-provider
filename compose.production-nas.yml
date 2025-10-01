@@ -4,8 +4,7 @@ services:
     image: ghcr.io/snadboy/sb-traefik-http-provider:latest
     container_name: sb-traefik-http-provider
     restart: unless-stopped
-    dns:
-      - 100.100.100.100  # Tailscale MagicDNS for hostname resolution
+    # Docker will use host DNS configuration which includes Tailscale MagicDNS
     ports:
       - "8081:8080"  # Expose provider API
     networks:
@@ -15,7 +14,7 @@ services:
       - LOG_DIR=/var/log/sb-traefik-provider
       - LOG_JSON=false  # Set to true for JSON logging
       - PYTHONUNBUFFERED=1
-      - WORKERS=2  # Number of uvicorn workers
+      - WORKERS=1  # Must use 1 worker with event listeners to avoid duplicates
     labels:
       - "snadboy.revp.8080.domain=sb-traefik-provider-api.isnadboy.com"
       - "snadboy.revp.9090.domain=sb-traefik-provider-metrics.isnadboy.com"
@@ -51,6 +50,7 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--providers.http.endpoint=http://sb-traefik-http-provider:8080/api/traefik/config"
       - "--providers.http.pollInterval=30s"
+      - "--providers.http.timeout=60s"  # Allow slow SSH-based discovery to complete
       - "--providers.docker=false"  # Disable Docker provider since we use HTTP provider
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"

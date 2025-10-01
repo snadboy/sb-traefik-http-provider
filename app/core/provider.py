@@ -8,12 +8,56 @@ import yaml
 import logging
 import re
 import time
+import subprocess
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 from pathlib import Path
 from snadboy_ssh_docker import SSHDockerClient
 
 logger = logging.getLogger(__name__)
+
+
+class SSHDockerClientDebugWrapper:
+    """Debug wrapper for SSHDockerClient to log commands"""
+
+    def __init__(self, client):
+        self._client = client
+        self._original_run = None
+        self._patch_subprocess()
+
+    def _patch_subprocess(self):
+        """Monkey-patch subprocess to capture SSH commands"""
+        original_run = subprocess.run
+
+        def debug_run(cmd, *args, **kwargs):
+            if isinstance(cmd, list) and len(cmd) > 0 and 'ssh' in cmd[0]:
+                logger.debug(f"SSH COMMAND: {' '.join(cmd)}")
+            return original_run(cmd, *args, **kwargs)
+
+        subprocess.run = debug_run
+        self._original_run = original_run
+
+    def __getattr__(self, name):
+        """Forward all other attributes to the wrapped client"""
+        attr = getattr(self._client, name)
+
+        # Don't wrap async generators (like docker_events)
+        if hasattr(attr, '__name__') and name == 'docker_events':
+            logger.debug(f"Passing through async generator: {name}")
+            return attr
+
+        if callable(attr):
+            async def wrapper(*args, **kwargs):
+                logger.debug(f"Calling SSHDockerClient.{name} with args={args}, kwargs={kwargs}")
+                try:
+                    result = await attr(*args, **kwargs)
+                    logger.debug(f"SSHDockerClient.{name} completed successfully")
+                    return result
+                except Exception as e:
+                    logger.error(f"SSHDockerClient.{name} failed: {e}")
+                    raise
+            return wrapper
+        return attr
 
 
 class TraefikProvider:
@@ -33,6 +77,18 @@ class TraefikProvider:
 
         # Store processed containers from last configuration generation
         self.last_processed_containers: List[Dict[str, Any]] = []
+
+        # Event-driven caching
+        self._config_cache: Optional[Dict[str, Any]] = None
+        self._cache_lock = asyncio.Lock()
+        self._cache_timestamp: Optional[float] = None
+        self._event_listener_tasks: Dict[str, asyncio.Task] = {}
+        self._event_stats: Dict[str, int] = {}  # Track events received per host
+        self._shutdown_event = asyncio.Event()
+
+        # Debouncing for cache refreshes (batch multiple events together)
+        self._pending_refresh: Optional[asyncio.Task] = None
+        self._refresh_debounce_seconds = 2.0  # Wait 2 seconds after last event before refreshing
 
     def _load_config(self) -> Dict[str, Any]:
         """Load provider configuration"""
@@ -67,7 +123,16 @@ class TraefikProvider:
                 logger.error(error_msg)
                 raise FileNotFoundError(error_msg)
 
-            self.ssh_client = SSHDockerClient(config_file=ssh_hosts_path)
+            # Create the base client
+            base_client = SSHDockerClient(config_file=ssh_hosts_path)
+
+            # Wrap it with debug logging if DEBUG level is enabled
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Wrapping SSHDockerClient with debug logging")
+                self.ssh_client = SSHDockerClientDebugWrapper(base_client)
+            else:
+                self.ssh_client = base_client
+
             logger.info("SSH Docker client initialized successfully with Tailscale authentication")
             logger.info(f"Using hosts configuration: {ssh_hosts_path}")
 
@@ -124,6 +189,7 @@ class TraefikProvider:
             raise ValueError("No host specified and no default_host in config")
 
         try:
+            logger.debug(f"Starting container discovery on host: {target_host}")
             containers = await self.ssh_client.list_containers(
                 host=target_host,
                 filters={"STATUS": "running"}
@@ -131,7 +197,23 @@ class TraefikProvider:
             logger.info(f"Discovered {len(containers)} running containers on {target_host}")
             return containers
         except Exception as e:
-            logger.error(f"Failed to discover containers on {target_host}: {e}")
+            error_msg = str(e)
+            logger.error(f"Failed to discover containers on {target_host}: {error_msg}")
+
+            # Provide more detailed error information for common SSH issues
+            if "Host key verification failed" in error_msg:
+                logger.error(f"SSH host key verification failed for '{target_host}'")
+                logger.error("Possible solutions:")
+                logger.error("1. Run: ssh-keyscan -H {target_host} >> ~/.ssh/known_hosts")
+                logger.error("2. Check if Tailscale is running and SSH is enabled")
+                logger.error("3. Verify the hostname is correct in ssh-hosts.yaml")
+            elif "Connection refused" in error_msg:
+                logger.error(f"SSH connection refused by '{target_host}'")
+                logger.error("Ensure SSH is enabled on the target host")
+            elif "No route to host" in error_msg or "Name or service not known" in error_msg:
+                logger.error(f"Cannot reach '{target_host}'")
+                logger.error("Check network connectivity and hostname resolution")
+
             return []
 
     async def inspect_container(self, host: str, container_id: str) -> Dict[str, Any]:
@@ -556,8 +638,24 @@ class TraefikProvider:
 
         return config
 
-    async def generate_config(self, host: Optional[str] = None) -> Dict[str, Any]:
-        """Generate complete Traefik configuration"""
+    async def generate_config(self, host: Optional[str] = None, force_refresh: bool = False) -> Dict[str, Any]:
+        """Generate complete Traefik configuration
+
+        Args:
+            host: Optional specific host to query
+            force_refresh: Force bypass cache and do full discovery
+
+        Returns:
+            Traefik configuration dictionary
+        """
+        # Return cached config if available (and not forcing refresh)
+        if not force_refresh:
+            async with self._cache_lock:
+                if self._config_cache is not None:
+                    cache_age = time.time() - self._cache_timestamp
+                    logger.debug(f"Returning cached config (age: {cache_age:.1f}s)")
+                    return self._config_cache.copy()
+
         # Reset diagnostic tracking for fresh generation
         self.reset_diagnostics()
         start_time = time.time()
@@ -623,6 +721,12 @@ class TraefikProvider:
             'excluded_containers': len(self.excluded_containers),
             'static_routes': static_routes_count
         }
+
+        # Update cache
+        async with self._cache_lock:
+            self._config_cache = config.copy()
+            self._cache_timestamp = time.time()
+            logger.info(f"Config cache updated ({processing_time_ms}ms generation time)")
 
         return config
 
@@ -805,3 +909,164 @@ class TraefikProvider:
         self.label_parsing_errors.clear()
         self.last_processed_containers.clear()
         # Note: ssh_host_status is NOT cleared - it persists across generations
+
+    async def start_event_listeners(self):
+        """Start Docker event listeners for all enabled hosts"""
+        enabled_hosts = self._get_enabled_hosts()
+        logger.info(f"Starting event listeners for hosts: {enabled_hosts}")
+
+        for host in enabled_hosts:
+            if host not in self._event_listener_tasks:
+                task = asyncio.create_task(self._event_listener_loop(host))
+                self._event_listener_tasks[host] = task
+                self._event_stats[host] = 0
+                logger.info(f"Started event listener for host: {host}")
+
+    async def stop_event_listeners(self):
+        """Stop all Docker event listeners"""
+        logger.info("Stopping event listeners...")
+        self._shutdown_event.set()
+
+        for host, task in self._event_listener_tasks.items():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                logger.debug(f"Event listener for {host} cancelled successfully")
+
+        self._event_listener_tasks.clear()
+        logger.info("All event listeners stopped")
+
+    async def _event_listener_loop(self, host: str):
+        """Event listener loop for a specific host using properly formatted SSH command"""
+        import json
+        retry_delay = 1
+        max_retry_delay = 60
+
+        # Get SSH alias from config
+        host_config = self.ssh_client.hosts_config.get_host_config(host)
+        ssh_alias = f"{host_config.user}@{host_config.hostname}"
+
+        while not self._shutdown_event.is_set():
+            process = None
+            try:
+                logger.info(f"Starting Docker event stream for {host}")
+
+                # Properly format the command - pass docker command as single string to SSH
+                # This avoids the "docker events accepts no arguments" error
+                cmd = ["ssh", ssh_alias, "docker events --format '{{json .}}'"]
+
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+
+                logger.info(f"Connected to Docker events stream on {host}")
+
+                # Read events from the process stdout
+                while not self._shutdown_event.is_set():
+                    line = await process.stdout.readline()
+                    if not line:
+                        # Stream ended
+                        logger.warning(f"Event stream ended for {host}")
+                        break
+
+                    try:
+                        event = json.loads(line.decode('utf-8').strip())
+                        self._event_stats[host] += 1
+                        await self._handle_docker_event(host, event)
+                        retry_delay = 1  # Reset retry delay on successful event
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse event from {host}: {e}")
+                        continue
+
+            except asyncio.CancelledError:
+                logger.info(f"Event listener for {host} cancelled")
+                if process:
+                    process.kill()
+                    await process.wait()
+                break
+            except Exception as e:
+                logger.error(f"Error in event listener for {host}: {e}", exc_info=True)
+                try:
+                    if process and process.stderr:
+                        stderr = await process.stderr.read()
+                        if stderr:
+                            logger.error(f"SSH stderr from {host}: {stderr.decode('utf-8')}")
+                except:
+                    pass
+                if process:
+                    process.kill()
+                    await process.wait()
+                if not self._shutdown_event.is_set():
+                    logger.info(f"Reconnecting to {host} in {retry_delay}s...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, max_retry_delay)
+
+    async def _handle_docker_event(self, host: str, event: Dict[str, Any]):
+        """Handle a Docker event and update cache if necessary"""
+        event_type = event.get('Type')
+        action = event.get('Action')
+
+        # Only handle container events
+        if event_type != 'container':
+            return
+
+        # Actions that should trigger cache refresh
+        refresh_actions = {'start', 'stop', 'die', 'destroy', 'create', 'restart'}
+
+        if action in refresh_actions:
+            container_name = event.get('Actor', {}).get('Attributes', {}).get('name', 'unknown')
+            logger.info(f"Container event on {host}: {action} - {container_name}")
+
+            # Refresh cache in background (don't block event processing)
+            asyncio.create_task(self._refresh_cache_from_event(host, action, container_name))
+
+    async def _refresh_cache_from_event(self, host: str, action: str, container_name: str):
+        """Refresh cache in response to a Docker event (with debouncing)"""
+        logger.debug(f"Event received: {action} for {container_name} on {host}, scheduling debounced refresh")
+
+        # Cancel any pending refresh
+        if self._pending_refresh and not self._pending_refresh.done():
+            self._pending_refresh.cancel()
+            logger.debug("Cancelled pending refresh to batch with new event")
+
+        # Schedule new refresh after debounce delay
+        self._pending_refresh = asyncio.create_task(self._debounced_refresh())
+
+    async def _debounced_refresh(self):
+        """Perform the actual cache refresh after debounce delay"""
+        try:
+            # Wait for debounce period (additional events will cancel and reschedule this)
+            await asyncio.sleep(self._refresh_debounce_seconds)
+
+            # Perform the refresh
+            logger.info(f"Debounce period complete, refreshing cache now")
+            await self.generate_config(force_refresh=True)
+            logger.info(f"Cache refreshed successfully after event(s)")
+        except asyncio.CancelledError:
+            # This is expected when events are batched
+            logger.debug("Debounced refresh cancelled (batching more events)")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to refresh cache after event: {e}")
+
+    def get_cache_info(self) -> Dict[str, Any]:
+        """Get information about the current cache state"""
+        return {
+            'cached': self._config_cache is not None,
+            'last_update': datetime.fromtimestamp(self._cache_timestamp, timezone.utc).isoformat() if self._cache_timestamp else None,
+            'cache_age_seconds': int(time.time() - self._cache_timestamp) if self._cache_timestamp else None,
+            'services_count': len(self._config_cache.get('http', {}).get('services', {})) if self._config_cache else 0
+        }
+
+    def get_event_listener_status(self) -> Dict[str, Any]:
+        """Get status of all event listeners"""
+        return {
+            host: {
+                'status': 'connected' if not task.done() else 'disconnected',
+                'events_received': self._event_stats.get(host, 0)
+            }
+            for host, task in self._event_listener_tasks.items()
+        }

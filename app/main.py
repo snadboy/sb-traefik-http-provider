@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.api.routes import router, get_provider
 from app.utils.logging_config import initialize_logging, get_logger
+from app.utils.ssh_setup import initialize_ssh_known_hosts
 
 # Initialize logging
 logging_config = {
@@ -36,12 +37,39 @@ async def lifespan(app: FastAPI):
     """Manage application lifecycle"""
     # Startup
     logger.info("FastAPI application starting up")
+
+    # Initialize SSH known_hosts for Tailscale hosts
+    # This runs once during application startup, after Docker networking is fully ready
+    logger.info("Initializing SSH known_hosts for configured Tailscale hosts")
+    ssh_result = initialize_ssh_known_hosts()
+    if ssh_result["status"] == "completed":
+        logger.info(f"SSH initialization: {ssh_result['message']}")
+        if ssh_result["hosts_failed"] > 0:
+            logger.warning(f"Some SSH hosts failed to initialize. Use POST /api/ssh/scan-keys/<hostname> to retry manually.")
+    else:
+        logger.warning(f"SSH initialization skipped: {ssh_result.get('message', 'Unknown reason')}")
+
     # Initialize provider on startup
     provider = get_provider()
     logger.info(f"Provider initialized with config: {provider.config_file}")
+
+    # Do initial config generation to populate cache
+    logger.info("Performing initial configuration generation...")
+    initial_config = await provider.generate_config(force_refresh=True)
+    services_count = len(initial_config.get('http', {}).get('services', {}))
+    logger.info(f"Initial configuration generated: {services_count} services discovered")
+
+    # Start Docker event listeners for real-time updates
+    logger.info("Starting Docker event listeners...")
+    await provider.start_event_listeners()
+    logger.info("Event listeners started successfully")
+
     yield
+
     # Shutdown
     logger.info("FastAPI application shutting down")
+    await provider.stop_event_listeners()
+    logger.info("Event listeners stopped")
 
 
 def create_app() -> FastAPI:

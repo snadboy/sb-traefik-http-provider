@@ -1,60 +1,17 @@
 #!/bin/bash
-# Docker entrypoint script with log rotation support
+# Docker entrypoint script for SB Traefik HTTP Provider
 
 set -e
 
 # Create log directory if it doesn't exist
 mkdir -p ${LOG_DIR:-/var/log/sb-traefik-provider}
 
-# Tailscale authentication with MagicDNS
-echo "Using Tailscale SSH authentication with MagicDNS resolution"
-echo "Ensure Tailscale is installed and SSH is enabled on all Docker hosts:"
-echo "  tailscale up --ssh"
-echo "MagicDNS (100.100.100.100) will resolve Tailscale hostnames automatically"
-
-# Pre-populate SSH known_hosts for Tailscale hosts
-echo "Pre-populating SSH known_hosts for configured Tailscale hosts..."
+# Ensure .ssh directory exists for SSH known_hosts (populated by Python app)
 mkdir -p /root/.ssh
-touch /root/.ssh/known_hosts
-chmod 600 /root/.ssh/known_hosts
+chmod 700 /root/.ssh
 
-# Parse ssh-hosts.yaml to get enabled hostnames
-if [ -f "/app/config/ssh-hosts.yaml" ]; then
-    # Extract hostname values for enabled hosts
-    HOSTNAMES=$(awk '
-        /^[[:space:]]*[a-zA-Z0-9_-]+:/ { current_host = $1; gsub(/:$/, "", current_host) }
-        /^[[:space:]]*hostname:/ { hostname = $2 }
-        /^[[:space:]]*enabled:[[:space:]]*true/ { if (hostname) print hostname; hostname = "" }
-    ' /app/config/ssh-hosts.yaml)
-
-    for hostname in $HOSTNAMES; do
-        if [ -n "$hostname" ]; then
-            echo "Scanning SSH host keys for $hostname..."
-            timeout 10 ssh-keyscan -H "$hostname" >> /root/.ssh/known_hosts 2>/dev/null || echo "Warning: Could not scan keys for $hostname"
-        fi
-    done
-
-    echo "SSH known_hosts populated with $(wc -l < /root/.ssh/known_hosts) host key entries"
-else
-    echo "Warning: SSH hosts config file not found at /app/config/ssh-hosts.yaml"
-fi
-
-# Set up logrotate if config exists
-if [ -f /app/config/logrotate.conf ]; then
-    echo "Setting up log rotation..."
-    cp /app/config/logrotate.conf /etc/logrotate.d/sb-traefik-provider
-    
-    # Create logrotate state file
-    touch /var/lib/logrotate/status
-    
-    # Run logrotate in background
-    (while true; do
-        logrotate /etc/logrotate.d/sb-traefik-provider
-        sleep 3600  # Check every hour
-    done) &
-    
-    echo "Log rotation configured and running"
-fi
+echo "SB Traefik HTTP Provider - Starting"
+echo "SSH known_hosts will be initialized by the Python application after networking is ready"
 
 # Handle different run modes
 case "${1}" in
