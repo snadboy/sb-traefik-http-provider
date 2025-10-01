@@ -71,8 +71,7 @@ services:
     networks:
       - traefik
     depends_on:
-      sb-traefik-http-provider:
-        condition: service_healthy
+      - sb-traefik-http-provider
     environment:
       - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}  # IMPORTANT: Set in .env file or environment
     env_file:

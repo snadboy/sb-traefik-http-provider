@@ -92,11 +92,13 @@ async def get_traefik_config(
         config = await provider.generate_config(host)
 
         # Log generated configuration
+        services_list = list(config['http']['services'].keys())
         logger.debug(f"Generated routers: {list(config['http']['routers'].keys())}")
-        logger.debug(f"Generated services: {list(config['http']['services'].keys())}")
+        logger.debug(f"Generated services: {services_list}")
 
-        service_count = len(config['http']['services'])
-        logger.info(f"Successfully generated config with {service_count} services for host: {target_host}")
+        service_count = len(services_list)
+        services_str = ', '.join(services_list)
+        logger.info(f"Successfully generated config with {service_count} services for host: {target_host} [{services_str}]")
         audit_logger.info(f"Config generated successfully - {service_count} services")
 
         return EnhancedTraefikConfigResponse(**config)
