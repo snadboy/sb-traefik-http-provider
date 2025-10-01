@@ -252,10 +252,12 @@ class TailscaleStatusModel(BaseModel):
 class SSHHostStatus(BaseModel):
     """SSH host connectivity status"""
     reachable: bool = Field(..., description="Whether host is reachable")
-    containers: int = Field(default=0, description="Number of running containers")
-    containers_total: int = Field(default=0, description="Total number of containers")
-    running_containers: List[str] = Field(default_factory=list, description="Names of running containers")
-    all_containers: List[str] = Field(default_factory=list, description="Names of all containers")
+    running_count: int = Field(default=0, description="Number of running containers")
+    stopped_count: int = Field(default=0, description="Number of stopped containers")
+    with_labels_count: int = Field(default=0, description="Number of containers with snadboy.revp labels")
+    running_names: List[str] = Field(default_factory=list, description="Names of running containers")
+    stopped_names: List[str] = Field(default_factory=list, description="Names of stopped containers")
+    with_labels_names: List[str] = Field(default_factory=list, description="Names of containers with snadboy.revp labels")
     last_check: Optional[str] = Field(None, description="Last check timestamp")
 
 

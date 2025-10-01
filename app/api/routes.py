@@ -843,20 +843,24 @@ async def _get_ssh_connectivity(provider: TraefikProvider) -> Dict[str, Dict[str
 
             connectivity[host] = {
                 "reachable": host_status.get("status") == "connected",
-                "containers": host_status.get("containers_running", 0),
-                "containers_total": host_status.get("containers_total", 0),
-                "running_containers": host_status.get("running_container_names", []),
-                "all_containers": host_status.get("all_container_names", []),
+                "running_count": host_status.get("running_count", 0),
+                "stopped_count": host_status.get("stopped_count", 0),
+                "with_labels_count": host_status.get("with_labels_count", 0),
+                "running_names": host_status.get("running_names", []),
+                "stopped_names": host_status.get("stopped_names", []),
+                "with_labels_names": host_status.get("with_labels_names", []),
                 "last_check": host_status.get("last_attempt")
             }
         except Exception as e:
             logger.warning(f"Could not check SSH connectivity for {host}: {e}")
             connectivity[host] = {
                 "reachable": False,
-                "containers": 0,
-                "containers_total": 0,
-                "running_containers": [],
-                "all_containers": [],
+                "running_count": 0,
+                "stopped_count": 0,
+                "with_labels_count": 0,
+                "running_names": [],
+                "stopped_names": [],
+                "with_labels_names": [],
                 "last_check": None
             }
 

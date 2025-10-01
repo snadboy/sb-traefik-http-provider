@@ -752,23 +752,45 @@ class TraefikProvider:
                     status['hostname'] = host_config.get('hostname', host)
 
             # Test connection and gather info
-            # Get all containers first, then filter for running ones
+            # Get all containers first, then filter by status
             all_containers = await self.ssh_client.list_containers(host=host)
             running_containers = [c for c in all_containers if 'up ' in c.get('Status', '').lower()]
+            stopped_containers = [c for c in all_containers if c not in running_containers]
 
             # Extract container names for diagnostics
             running_names = [c.get('Name', c.get('Names', 'unknown')) for c in running_containers]
-            all_names = [c.get('Name', c.get('Names', 'unknown')) for c in all_containers]
+            stopped_names = [c.get('Name', c.get('Names', 'unknown')) for c in stopped_containers]
+
+            # Get containers with labels from cached config
+            # Extract container names from services in the cached config
+            with_labels_names = []
+            with_labels_count = 0
+            if self._config_cache:
+                services = self._config_cache.get('http', {}).get('services', {})
+                for service_name, service_config in services.items():
+                    # Skip static routes
+                    if service_name.startswith('static-'):
+                        continue
+                    # Extract host from service URL (e.g., http://media-arr:8080/)
+                    url = service_config.get('loadBalancer', {}).get('servers', [{}])[0].get('url', '')
+                    if f'//{host}:' in url:
+                        # Extract container name from service name (e.g., "sonarr-8989" -> "sonarr")
+                        container_name = service_name.rsplit('-', 1)[0] if '-' in service_name else service_name
+                        if container_name not in with_labels_names:
+                            with_labels_names.append(container_name)
+                with_labels_count = len(with_labels_names)
 
             connection_time = int((time.time() - start_time) * 1000)
             status.update({
                 'status': 'connected',
                 'connection_time_ms': connection_time,
                 'last_successful_connection': status['last_attempt'],
-                'containers_total': len(all_containers),
-                'containers_running': len(running_containers),
-                'running_container_names': running_names,
-                'all_container_names': all_names
+                'running_count': len(running_containers),
+                'stopped_count': len(stopped_containers),
+                'with_labels_count': with_labels_count,
+                'running_names': running_names,
+                'stopped_names': stopped_names,
+                'with_labels_names': with_labels_names
             })
 
             # Try to get Docker version
