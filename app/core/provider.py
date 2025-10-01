@@ -1066,7 +1066,14 @@ class TraefikProvider:
                         break
 
             if has_routing_labels:
-                logger.info(f"Container event on {host}: {action} - {container_name} (routed by Traefik)")
+                # Log detailed event information that triggered the refresh
+                event_time = event.get('time', 'unknown')
+                event_id = event.get('id', 'unknown')[:12]  # Short ID like Docker
+                actor_id = event.get('Actor', {}).get('ID', 'unknown')[:12]
+                logger.info(
+                    f"Container event on {host}: {action} - {container_name} "
+                    f"(routed by Traefik) [time={event_time}, event_id={event_id}, actor_id={actor_id}]"
+                )
                 # Refresh cache in background (don't block event processing)
                 asyncio.create_task(self._refresh_cache_from_event(host, action, container_name))
             else:
