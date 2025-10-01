@@ -50,7 +50,6 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--providers.http.endpoint=http://sb-traefik-http-provider:8080/api/traefik/config"
       - "--providers.http.pollInterval=30s"
-      - "--providers.http.timeout=60s"  # Allow slow SSH-based discovery to complete
       - "--providers.docker=false"  # Disable Docker provider since we use HTTP provider
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"
