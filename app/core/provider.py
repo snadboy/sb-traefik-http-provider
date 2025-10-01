@@ -996,8 +996,19 @@ class TraefikProvider:
                 while not self._shutdown_event.is_set():
                     line = await process.stdout.readline()
                     if not line:
-                        # Stream ended
-                        logger.warning(f"Event stream ended for {host}")
+                        # Stream ended - check stderr for any error messages
+                        stderr_output = ""
+                        if process.stderr:
+                            try:
+                                stderr_data = await asyncio.wait_for(process.stderr.read(), timeout=1.0)
+                                stderr_output = stderr_data.decode('utf-8').strip()
+                            except asyncio.TimeoutError:
+                                pass
+
+                        if stderr_output:
+                            logger.error(f"Event stream ended for {host} with error: {stderr_output}")
+                        else:
+                            logger.warning(f"Event stream ended for {host} (no data received)")
                         break
 
                     try:
