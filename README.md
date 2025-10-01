@@ -4,17 +4,20 @@ A high-performance FastAPI-based HTTP provider for Traefik that discovers Docker
 
 ## Features
 
+- **Event-Driven Architecture**: Real-time Docker event streams from all hosts with intelligent caching
 - **Multi-host Docker Discovery**: Discover containers across multiple Docker hosts via Tailscale SSH
 - **Dynamic Configuration**: Automatically generate Traefik routing configuration from container labels
+- **Instant Updates**: Configuration cached in memory with automatic refresh on container events
+- **Smart Debouncing**: Batches multiple events together to reduce unnecessary updates (2s delay)
 - **Simplified Label Syntax**: Uses `snadboy.revp` labels for easier container configuration
 - **Tailscale MagicDNS**: Leverages Tailscale's MagicDNS (100.100.100.100) for automatic hostname resolution
 - **Bridge Networking**: Proper container isolation with explicit port mappings instead of host networking
-- **Automatic SSH Host Keys**: Pre-populates SSH known_hosts on startup for seamless connectivity
+- **Automatic SSH Setup**: Python-based SSH known_hosts initialization with robust error handling
 - **Zero-Config Authentication**: Uses Tailscale for authentication - no SSH keys required
 - **FastAPI Framework**: Native async/await support with automatic API documentation
 - **Type Safety**: Pydantic models for request/response validation
+- **Comprehensive Diagnostics**: Environment info, cache status, event listener stats
 - **Health Checks**: Endpoints for monitoring provider health
-- **Real-time Monitoring**: SSHDockerClient monitors Docker events continuously
 - **Prometheus Metrics**: Export metrics for monitoring
 - **VSCode Remote Debugging**: Full debugging support with minimal overhead
 - **Auto-generated Documentation**: Interactive API docs at `/docs` and `/redoc`
@@ -456,9 +459,15 @@ Static routes are processed alongside container routes and appear in the same co
 - `GET /api/containers` - List discovered containers with exclusion info and diagnostics
 
 ### Diagnostic Endpoints
+- `GET /api/diagnostics/environment` - Comprehensive environment diagnostics (container, DNS, network, Tailscale, SSH, cache, events)
 - `GET /api/status` - Comprehensive system status including SSH host health
 - `GET /api/hosts` - SSH host connection statuses
 - `GET /api/debug` - Detailed debugging information (label parsing, static routes, SSH diagnostics)
+
+### Cache Management
+- `GET /api/cache/info` - Cache status and statistics
+- `POST /api/cache/refresh` - Force cache refresh
+- `GET /api/events/stats` - Event listener statistics
 
 ### Documentation
 - `GET /docs` - Interactive Swagger UI documentation
