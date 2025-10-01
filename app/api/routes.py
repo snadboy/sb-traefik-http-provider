@@ -845,6 +845,8 @@ async def _get_ssh_connectivity(provider: TraefikProvider) -> Dict[str, Dict[str
                 "reachable": host_status.get("status") == "connected",
                 "containers": host_status.get("containers_running", 0),
                 "containers_total": host_status.get("containers_total", 0),
+                "running_containers": host_status.get("running_container_names", []),
+                "all_containers": host_status.get("all_container_names", []),
                 "last_check": host_status.get("last_attempt")
             }
         except Exception as e:
@@ -853,6 +855,8 @@ async def _get_ssh_connectivity(provider: TraefikProvider) -> Dict[str, Dict[str
                 "reachable": False,
                 "containers": 0,
                 "containers_total": 0,
+                "running_containers": [],
+                "all_containers": [],
                 "last_check": None
             }
 

@@ -756,13 +756,19 @@ class TraefikProvider:
             all_containers = await self.ssh_client.list_containers(host=host)
             running_containers = [c for c in all_containers if 'up ' in c.get('Status', '').lower()]
 
+            # Extract container names for diagnostics
+            running_names = [c.get('Name', c.get('Names', 'unknown')) for c in running_containers]
+            all_names = [c.get('Name', c.get('Names', 'unknown')) for c in all_containers]
+
             connection_time = int((time.time() - start_time) * 1000)
             status.update({
                 'status': 'connected',
                 'connection_time_ms': connection_time,
                 'last_successful_connection': status['last_attempt'],
                 'containers_total': len(all_containers),
-                'containers_running': len(running_containers)
+                'containers_running': len(running_containers),
+                'running_container_names': running_names,
+                'all_container_names': all_names
             })
 
             # Try to get Docker version

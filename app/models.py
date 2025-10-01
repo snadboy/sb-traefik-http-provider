@@ -254,6 +254,8 @@ class SSHHostStatus(BaseModel):
     reachable: bool = Field(..., description="Whether host is reachable")
     containers: int = Field(default=0, description="Number of running containers")
     containers_total: int = Field(default=0, description="Total number of containers")
+    running_containers: List[str] = Field(default_factory=list, description="Names of running containers")
+    all_containers: List[str] = Field(default_factory=list, description="Names of all containers")
     last_check: Optional[str] = Field(None, description="Last check timestamp")
 
 
