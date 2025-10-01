@@ -48,7 +48,7 @@ case "${1}" in
             app.main:app \
             --host 0.0.0.0 \
             --port 8080 \
-            --workers ${WORKERS:-2} \
+            --workers ${WORKERS:-1} \
             --log-level ${UVICORN_LOG_LEVEL} \
             --access-log
         ;;

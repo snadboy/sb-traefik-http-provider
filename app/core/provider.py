@@ -1046,10 +1046,31 @@ class TraefikProvider:
 
         if action in refresh_actions:
             container_name = event.get('Actor', {}).get('Attributes', {}).get('name', 'unknown')
-            logger.info(f"Container event on {host}: {action} - {container_name}")
 
-            # Refresh cache in background (don't block event processing)
-            asyncio.create_task(self._refresh_cache_from_event(host, action, container_name))
+            # Check if this container is in our cached config (has routing labels)
+            # Docker events don't include custom labels, only Docker metadata
+            # So we check if this container is currently routed by Traefik
+            has_routing_labels = False
+            if self._config_cache:
+                services = self._config_cache.get('http', {}).get('services', {})
+                for service_name, service_config in services.items():
+                    if service_name.startswith('static-'):
+                        continue
+                    # Extract container name from service name (e.g., "sonarr-8989" -> "sonarr")
+                    service_container = service_name.rsplit('-', 1)[0] if '-' in service_name else service_name
+                    # Also check the service URL for the container name
+                    url = service_config.get('loadBalancer', {}).get('servers', [{}])[0].get('url', '')
+
+                    if service_container == container_name or container_name in url:
+                        has_routing_labels = True
+                        break
+
+            if has_routing_labels:
+                logger.info(f"Container event on {host}: {action} - {container_name} (routed by Traefik)")
+                # Refresh cache in background (don't block event processing)
+                asyncio.create_task(self._refresh_cache_from_event(host, action, container_name))
+            else:
+                logger.debug(f"Ignoring event on {host}: {action} - {container_name} (not routed)")
 
     async def _refresh_cache_from_event(self, host: str, action: str, container_name: str):
         """Refresh cache in response to a Docker event (with debouncing)"""
