@@ -252,7 +252,8 @@ class TailscaleStatusModel(BaseModel):
 class SSHHostStatus(BaseModel):
     """SSH host connectivity status"""
     reachable: bool = Field(..., description="Whether host is reachable")
-    containers: int = Field(default=0, description="Number of containers")
+    containers: int = Field(default=0, description="Number of running containers")
+    containers_total: int = Field(default=0, description="Total number of containers")
     last_check: Optional[str] = Field(None, description="Last check timestamp")
 
 
