@@ -1008,6 +1008,11 @@ class TraefikProvider:
 
                         if stderr_output:
                             logger.error(f"Event stream ended for {host} with error: {stderr_output}")
+                            # Check if it's a permission error - use exponential backoff
+                            if "Permission denied" in stderr_output:
+                                logger.warning(f"SSH permission denied for {host}, reconnecting in {retry_delay}s...")
+                                await asyncio.sleep(retry_delay)
+                                retry_delay = min(retry_delay * 2, max_retry_delay)
                         else:
                             logger.warning(f"Event stream ended for {host} (no data received)")
                         break
