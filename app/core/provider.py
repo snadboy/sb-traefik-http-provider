@@ -1051,6 +1051,7 @@ class TraefikProvider:
             # Docker events don't include custom labels, only Docker metadata
             # So we check if this container is currently routed by Traefik
             has_routing_labels = False
+            matching_services = []
             if self._config_cache:
                 services = self._config_cache.get('http', {}).get('services', {})
                 for service_name, service_config in services.items():
@@ -1063,16 +1064,18 @@ class TraefikProvider:
 
                     if service_container == container_name or container_name in url:
                         has_routing_labels = True
-                        break
+                        matching_services.append(service_name)
 
             if has_routing_labels:
                 # Log detailed event information that triggered the refresh
                 event_time = event.get('time', 'unknown')
                 event_id = event.get('id', 'unknown')[:12]  # Short ID like Docker
                 actor_id = event.get('Actor', {}).get('ID', 'unknown')[:12]
+                services_str = ', '.join(matching_services)
                 logger.info(
                     f"Container event on {host}: {action} - {container_name} "
-                    f"(routed by Traefik) [time={event_time}, event_id={event_id}, actor_id={actor_id}]"
+                    f"(routed by Traefik) [services: {services_str}] "
+                    f"[time={event_time}, event_id={event_id}, actor_id={actor_id}]"
                 )
                 # Refresh cache in background (don't block event processing)
                 asyncio.create_task(self._refresh_cache_from_event(host, action, container_name))
