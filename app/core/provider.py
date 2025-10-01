@@ -981,8 +981,9 @@ class TraefikProvider:
                 logger.info(f"Starting Docker event stream for {host}")
 
                 # Properly format the command - pass docker command as single string to SSH
+                # Filter for only container lifecycle events to reduce noise from healthchecks/execs
                 # This avoids the "docker events accepts no arguments" error
-                cmd = ["ssh", ssh_alias, "docker events --format '{{json .}}'"]
+                cmd = ["ssh", ssh_alias, "docker events --filter 'type=container' --filter 'event=start' --filter 'event=stop' --filter 'event=die' --filter 'event=destroy' --filter 'event=create' --filter 'event=restart' --format '{{json .}}'"]
 
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
