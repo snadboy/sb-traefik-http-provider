@@ -177,10 +177,15 @@ def get_enabled_hosts_from_config(config_path: str = "/app/config/ssh-hosts.yaml
         enabled_hosts = []
         for host_name, host_config in config['hosts'].items():
             if host_config.get('enabled', False):
+                # Skip localhost (is_local=true) - no SSH keyscan needed
+                if host_config.get('is_local', False):
+                    logger.info(f"Skipping SSH keyscan for localhost: {host_name}")
+                    continue
+
                 hostname = host_config.get('hostname', host_name)
                 enabled_hosts.append(hostname)
 
-        logger.info(f"Found {len(enabled_hosts)} enabled hosts in configuration: {enabled_hosts}")
+        logger.info(f"Found {len(enabled_hosts)} enabled hosts requiring SSH keyscan: {enabled_hosts}")
         return enabled_hosts
 
     except Exception as e:

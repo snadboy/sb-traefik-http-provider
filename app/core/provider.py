@@ -971,19 +971,43 @@ class TraefikProvider:
         retry_delay = 1
         max_retry_delay = 60
 
-        # Get SSH alias from config
+        # Get host config
         host_config = self.ssh_client.hosts_config.get_host_config(host)
-        ssh_alias = f"{host_config.user}@{host_config.hostname}"
 
         while not self._shutdown_event.is_set():
             process = None
             try:
                 logger.info(f"Starting Docker event stream for {host}")
 
-                # Properly format the command - pass docker command as single string to SSH
+                # Build docker events command based on host type
                 # Filter for only container lifecycle events to reduce noise from healthchecks/execs
-                # This avoids the "docker events accepts no arguments" error
-                cmd = ["ssh", ssh_alias, "docker events --filter 'type=container' --filter 'event=start' --filter 'event=stop' --filter 'event=die' --filter 'event=destroy' --filter 'event=create' --filter 'event=restart' --format '{{json .}}'"]
+                if host_config.is_local:
+                    # Localhost: docker events (uses local socket)
+                    cmd = [
+                        "docker", "events",
+                        "--filter", "type=container",
+                        "--filter", "event=start",
+                        "--filter", "event=stop",
+                        "--filter", "event=die",
+                        "--filter", "event=destroy",
+                        "--filter", "event=create",
+                        "--filter", "event=restart",
+                        "--format", "{{json .}}"
+                    ]
+                else:
+                    # Remote: docker -H ssh://user@host events
+                    docker_host = f"ssh://{host_config.user}@{host_config.hostname}"
+                    cmd = [
+                        "docker", "-H", docker_host, "events",
+                        "--filter", "type=container",
+                        "--filter", "event=start",
+                        "--filter", "event=stop",
+                        "--filter", "event=die",
+                        "--filter", "event=destroy",
+                        "--filter", "event=create",
+                        "--filter", "event=restart",
+                        "--format", "{{json .}}"
+                    ]
 
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
