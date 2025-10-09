@@ -25,7 +25,15 @@ class DNSHealthCheck:
         ns_ts: str = None,
         ns_lan: str = None,
         admin_url: str = None,
-        timeout: float = 2.0
+        timeout: float = 2.0,
+        # Notification settings
+        ha_url: str = None,
+        ha_token: str = None,
+        ha_notify_service: str = None,
+        gotify_url: str = None,
+        gotify_token: str = None,
+        gotify_title: str = None,
+        gotify_priority: int = None
     ):
         """Initialize DNS health checker
 
@@ -35,12 +43,28 @@ class DNSHealthCheck:
             ns_lan: LAN nameserver IP (optional)
             admin_url: Technitium admin URL for HTTP check (optional)
             timeout: Query timeout in seconds
+            ha_url: Home Assistant URL (optional)
+            ha_token: Home Assistant long-lived token (optional)
+            ha_notify_service: Home Assistant notify service name (optional)
+            gotify_url: Gotify message URL (optional)
+            gotify_token: Gotify app token (optional)
+            gotify_title: Gotify notification title (optional)
+            gotify_priority: Gotify message priority (optional)
         """
         self.name = name or os.getenv("DNS_CHECK_NAME", "sonarr.isnadboy.com")
         self.ns_ts = ns_ts or os.getenv("DNS_CHECK_NS_TS", "100.65.231.21")
         self.ns_lan = ns_lan or os.getenv("DNS_CHECK_NS_LAN", "")
         self.admin_url = admin_url or os.getenv("DNS_CHECK_ADMIN_URL", "")
         self.timeout = timeout
+
+        # Notification configuration
+        self.ha_url = ha_url or os.getenv("HA_URL", "")
+        self.ha_token = ha_token or os.getenv("HA_TOKEN", "")
+        self.ha_notify_service = ha_notify_service or os.getenv("HA_NOTIFY_SERVICE", "")
+        self.gotify_url = gotify_url or os.getenv("GOTIFY_URL", "")
+        self.gotify_token = gotify_token or os.getenv("GOTIFY_TOKEN", "")
+        self.gotify_title = gotify_title or os.getenv("GOTIFY_TITLE", "DNS Health Check FAILED")
+        self.gotify_priority = gotify_priority or int(os.getenv("GOTIFY_PRIORITY", "5"))
 
     def query_a(self, server: str, name: str) -> bool:
         """Query A record from DNS server
@@ -95,6 +119,76 @@ class DNSHealthCheck:
         except Exception as e:
             logger.error(f"HTTP check error: {url}: {e}")
             return False
+
+    def _http_post(self, url: str, data: bytes, headers: Optional[Dict[str, str]] = None, timeout: float = 3) -> bool:
+        """Internal HTTP POST helper
+
+        Args:
+            url: URL to POST to
+            data: Request body (JSON encoded)
+            headers: Request headers
+            timeout: Request timeout
+
+        Returns:
+            True if POST succeeded (2xx status)
+        """
+        if headers is None:
+            headers = {}
+        try:
+            req = Request(url, data=data, headers=headers)
+            with urlopen(req, timeout=timeout) as resp:
+                return 200 <= resp.status < 300
+        except Exception as e:
+            logger.debug(f"HTTP POST failed to {url}: {e}")
+            return False
+
+    def notify(self, message: str) -> bool:
+        """Send notification via Home Assistant or Gotify
+
+        Args:
+            message: Notification message
+
+        Returns:
+            True if notification sent successfully
+        """
+        # Try Home Assistant service call first if configured
+        if self.ha_url and self.ha_token and self.ha_notify_service:
+            try:
+                data = json.dumps({
+                    "message": message,
+                    "title": self.gotify_title
+                }).encode()
+                headers = {
+                    "Authorization": f"Bearer {self.ha_token}",
+                    "Content-Type": "application/json"
+                }
+                url = f"{self.ha_url}/api/services/notify/{self.ha_notify_service}"
+                if self._http_post(url, data, headers):
+                    logger.info(f"Sent notification via Home Assistant: {self.ha_notify_service}")
+                    return True
+            except Exception as e:
+                logger.warning(f"Failed to send Home Assistant notification: {e}")
+                # Fall through to Gotify
+
+        # Fallback: direct Gotify
+        if self.gotify_url and self.gotify_token:
+            try:
+                data = json.dumps({
+                    "title": self.gotify_title,
+                    "message": message,
+                    "priority": self.gotify_priority
+                }).encode()
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Gotify-Key": self.gotify_token
+                }
+                if self._http_post(self.gotify_url, data, headers):
+                    logger.info("Sent notification via Gotify")
+                    return True
+            except Exception as e:
+                logger.warning(f"Failed to send Gotify notification: {e}")
+
+        return False
 
     def perform_check(self) -> Dict[str, Any]:
         """Perform complete DNS health check
@@ -178,11 +272,21 @@ def get_dns_health_checker() -> DNSHealthCheck:
     return _health_checker
 
 
-def perform_dns_health_check() -> Dict[str, Any]:
+def perform_dns_health_check(send_notification: bool = False) -> Dict[str, Any]:
     """Perform DNS health check using module singleton
+
+    Args:
+        send_notification: If True, send notification on failure
 
     Returns:
         Health check result dictionary
     """
     checker = get_dns_health_checker()
-    return checker.perform_check()
+    result = checker.perform_check()
+
+    # Send notification if check failed and notifications are enabled
+    if send_notification and not result['ok']:
+        message = f"DNS health check FAILED for {checker.name} (TS:{checker.ns_ts}, LAN:{checker.ns_lan or '-'}, ADMIN:{checker.admin_url or '-'})\nErrors: {', '.join(result['errors'])}"
+        checker.notify(message)
+
+    return result

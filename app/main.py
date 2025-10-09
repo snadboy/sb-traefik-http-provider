@@ -42,7 +42,9 @@ async def lifespan(app: FastAPI):
     # DNS health check (optional, controlled by env var)
     if os.getenv('DNS_HEALTH_CHECK_ENABLED', 'false').lower() == 'true':
         logger.info("Performing DNS health check...")
-        dns_result = perform_dns_health_check()
+        # Enable notifications if DNS_HEALTH_CHECK_NOTIFY is set
+        send_notification = os.getenv('DNS_HEALTH_CHECK_NOTIFY', 'false').lower() == 'true'
+        dns_result = perform_dns_health_check(send_notification=send_notification)
         if dns_result['ok']:
             logger.info(f"DNS health check PASSED: {dns_result['checks']}")
         else:

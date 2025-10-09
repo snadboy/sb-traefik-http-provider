@@ -17,10 +17,20 @@ services:
       - WORKERS=1  # Must use 1 worker with event listeners to avoid duplicates
       # DNS Health Check (optional)
       - DNS_HEALTH_CHECK_ENABLED=false  # Set to true to enable
+      - DNS_HEALTH_CHECK_NOTIFY=false  # Send notifications on failure
       - DNS_CHECK_NAME=sonarr.isnadboy.com
       - DNS_CHECK_NS_TS=100.65.231.21
       - DNS_CHECK_NS_LAN=192.168.86.76
       # - DNS_CHECK_ADMIN_URL=https://dns.isnadboy.com
+      # Home Assistant Notifications (optional)
+      # - HA_URL=https://ha.isnadboy.com
+      # - HA_TOKEN=your_long_lived_token
+      # - HA_NOTIFY_SERVICE=gotify  # or mobile_app_pixel8, etc
+      # Gotify Notifications (optional, fallback if HA not configured)
+      # - GOTIFY_URL=https://gotify.isnadboy.com/message
+      # - GOTIFY_TOKEN=your_app_token
+      # - GOTIFY_TITLE=DNS Health Check FAILED
+      # - GOTIFY_PRIORITY=5
     labels:
       - "snadboy.revp.8080.domain=sb-traefik-provider-api.isnadboy.com"
       - "snadboy.revp.9090.domain=sb-traefik-provider-metrics.isnadboy.com"
