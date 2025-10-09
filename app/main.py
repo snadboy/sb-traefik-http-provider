@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes import router, get_provider
 from app.utils.logging_config import initialize_logging, get_logger
 from app.utils.ssh_setup import initialize_ssh_known_hosts
+from app.utils.dns_health import perform_dns_health_check
 
 # Initialize logging
 logging_config = {
@@ -37,6 +38,22 @@ async def lifespan(app: FastAPI):
     """Manage application lifecycle"""
     # Startup
     logger.info("FastAPI application starting up")
+
+    # DNS health check (optional, controlled by env var)
+    if os.getenv('DNS_HEALTH_CHECK_ENABLED', 'false').lower() == 'true':
+        logger.info("Performing DNS health check...")
+        dns_result = perform_dns_health_check()
+        if dns_result['ok']:
+            logger.info(f"DNS health check PASSED: {dns_result['checks']}")
+        else:
+            logger.error(f"DNS health check FAILED: {dns_result['errors']}")
+            if os.getenv('DNS_HEALTH_CHECK_STRICT', 'false').lower() == 'true':
+                logger.error("DNS health check is in strict mode - startup aborted")
+                raise RuntimeError(f"DNS health check failed: {dns_result['errors']}")
+            else:
+                logger.warning("DNS health check failed but continuing startup (non-strict mode)")
+    else:
+        logger.debug("DNS health check disabled (set DNS_HEALTH_CHECK_ENABLED=true to enable)")
 
     # Initialize SSH known_hosts for Tailscale hosts
     # This runs once during application startup, after Docker networking is fully ready

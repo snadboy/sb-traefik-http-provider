@@ -15,6 +15,12 @@ services:
       - LOG_JSON=false  # Set to true for JSON logging
       - PYTHONUNBUFFERED=1
       - WORKERS=1  # Must use 1 worker with event listeners to avoid duplicates
+      # DNS Health Check (optional)
+      - DNS_HEALTH_CHECK_ENABLED=false  # Set to true to enable
+      - DNS_CHECK_NAME=sonarr.isnadboy.com
+      - DNS_CHECK_NS_TS=100.65.231.21
+      - DNS_CHECK_NS_LAN=192.168.86.76
+      # - DNS_CHECK_ADMIN_URL=https://dns.isnadboy.com
     labels:
       - "snadboy.revp.8080.domain=sb-traefik-provider-api.isnadboy.com"
       - "snadboy.revp.9090.domain=sb-traefik-provider-metrics.isnadboy.com"
@@ -25,6 +31,7 @@ services:
       retries: 3
       start_period: 40s
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - type: volume
         source: nas-data
         target: /app/config

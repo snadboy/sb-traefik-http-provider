@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query, HTTPException
 from app.core import TraefikProvider
 from app.utils.ssh_setup import scan_and_add_ssh_keys
+from app.utils.dns_health import perform_dns_health_check
 from app.models import (
     HealthResponse,
     ErrorResponse,
@@ -62,6 +63,32 @@ async def health_check() -> HealthResponse:
         timestamp=datetime.now(timezone.utc).isoformat(),
         log_level=logger.level
     )
+
+
+@router.get("/api/health/dns")
+async def dns_health_check() -> Dict[str, Any]:
+    """
+    DNS health check endpoint
+
+    Performs DNS resolution checks against configured nameservers (Tailscale, LAN)
+    and optionally checks HTTP connectivity to Technitium admin interface.
+
+    Configuration via environment variables:
+    - DNS_CHECK_NAME: Domain to test (default: sonarr.isnadboy.com)
+    - DNS_CHECK_NS_TS: Tailscale nameserver (default: 100.65.231.21)
+    - DNS_CHECK_NS_LAN: LAN nameserver (optional)
+    - DNS_CHECK_ADMIN_URL: Admin URL to check (optional)
+
+    Returns:
+        DNS health check results with detailed check status
+    """
+    logger.info("DNS health check requested via API")
+    result = perform_dns_health_check()
+
+    # Add timestamp
+    result['timestamp'] = datetime.now(timezone.utc).isoformat()
+
+    return result
 
 
 @router.get("/api/traefik/config", response_model=EnhancedTraefikConfigResponse, response_model_exclude_none=True, responses={
