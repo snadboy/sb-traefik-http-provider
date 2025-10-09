@@ -27,9 +27,7 @@ class DNSHealthCheck:
         admin_url: str = None,
         timeout: float = 2.0,
         # Notification settings
-        ha_url: str = None,
-        ha_token: str = None,
-        ha_notify_service: str = None,
+        gotify_enabled: bool = None,
         gotify_url: str = None,
         gotify_token: str = None,
         gotify_title: str = None,
@@ -43,13 +41,11 @@ class DNSHealthCheck:
             ns_lan: LAN nameserver IP (optional)
             admin_url: Technitium admin URL for HTTP check (optional)
             timeout: Query timeout in seconds
-            ha_url: Home Assistant URL (optional)
-            ha_token: Home Assistant long-lived token (optional)
-            ha_notify_service: Home Assistant notify service name (optional)
-            gotify_url: Gotify message URL (optional)
-            gotify_token: Gotify app token (optional)
-            gotify_title: Gotify notification title (optional)
-            gotify_priority: Gotify message priority (optional)
+            gotify_enabled: Enable Gotify notifications
+            gotify_url: Gotify message URL
+            gotify_token: Gotify app token
+            gotify_title: Gotify notification title
+            gotify_priority: Gotify message priority
         """
         self.name = name or os.getenv("DNS_CHECK_NAME", "sonarr.isnadboy.com")
         self.ns_ts = ns_ts or os.getenv("DNS_CHECK_NS_TS", "100.65.231.21")
@@ -58,9 +54,7 @@ class DNSHealthCheck:
         self.timeout = timeout
 
         # Notification configuration
-        self.ha_url = ha_url or os.getenv("HA_URL", "")
-        self.ha_token = ha_token or os.getenv("HA_TOKEN", "")
-        self.ha_notify_service = ha_notify_service or os.getenv("HA_NOTIFY_SERVICE", "")
+        self.gotify_enabled = gotify_enabled if gotify_enabled is not None else os.getenv("GOTIFY_ENABLED", "false").lower() == "true"
         self.gotify_url = gotify_url or os.getenv("GOTIFY_URL", "")
         self.gotify_token = gotify_token or os.getenv("GOTIFY_TOKEN", "")
         self.gotify_title = gotify_title or os.getenv("GOTIFY_TITLE", "DNS Health Check FAILED")
@@ -143,7 +137,7 @@ class DNSHealthCheck:
             return False
 
     def notify(self, message: str) -> bool:
-        """Send notification via Home Assistant or Gotify
+        """Send notification via Gotify
 
         Args:
             message: Notification message
@@ -151,42 +145,29 @@ class DNSHealthCheck:
         Returns:
             True if notification sent successfully
         """
-        # Try Home Assistant service call first if configured
-        if self.ha_url and self.ha_token and self.ha_notify_service:
-            try:
-                data = json.dumps({
-                    "message": message,
-                    "title": self.gotify_title
-                }).encode()
-                headers = {
-                    "Authorization": f"Bearer {self.ha_token}",
-                    "Content-Type": "application/json"
-                }
-                url = f"{self.ha_url}/api/services/notify/{self.ha_notify_service}"
-                if self._http_post(url, data, headers):
-                    logger.info(f"Sent notification via Home Assistant: {self.ha_notify_service}")
-                    return True
-            except Exception as e:
-                logger.warning(f"Failed to send Home Assistant notification: {e}")
-                # Fall through to Gotify
+        if not self.gotify_enabled:
+            logger.debug("Gotify notifications disabled")
+            return False
 
-        # Fallback: direct Gotify
-        if self.gotify_url and self.gotify_token:
-            try:
-                data = json.dumps({
-                    "title": self.gotify_title,
-                    "message": message,
-                    "priority": self.gotify_priority
-                }).encode()
-                headers = {
-                    "Content-Type": "application/json",
-                    "X-Gotify-Key": self.gotify_token
-                }
-                if self._http_post(self.gotify_url, data, headers):
-                    logger.info("Sent notification via Gotify")
-                    return True
-            except Exception as e:
-                logger.warning(f"Failed to send Gotify notification: {e}")
+        if not self.gotify_url or not self.gotify_token:
+            logger.warning("Gotify enabled but URL or token not configured")
+            return False
+
+        try:
+            data = json.dumps({
+                "title": self.gotify_title,
+                "message": message,
+                "priority": self.gotify_priority
+            }).encode()
+            headers = {
+                "Content-Type": "application/json",
+                "X-Gotify-Key": self.gotify_token
+            }
+            if self._http_post(self.gotify_url, data, headers):
+                logger.info("Sent notification via Gotify")
+                return True
+        except Exception as e:
+            logger.warning(f"Failed to send Gotify notification: {e}")
 
         return False
 

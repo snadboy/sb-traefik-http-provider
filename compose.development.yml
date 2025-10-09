@@ -30,11 +30,8 @@ services:
       - DNS_CHECK_NS_TS=100.65.231.21
       - DNS_CHECK_NS_LAN=192.168.86.76
       # - DNS_CHECK_ADMIN_URL=https://dns.isnadboy.com
-      # Home Assistant Notifications (optional)
-      # - HA_URL=https://ha.isnadboy.com
-      # - HA_TOKEN=your_long_lived_token
-      # - HA_NOTIFY_SERVICE=gotify  # or mobile_app_pixel8, etc
-      # Gotify Notifications (optional, fallback if HA not configured)
+      # Gotify Notifications (optional)
+      - GOTIFY_ENABLED=false  # Set to true to enable Gotify notifications
       # - GOTIFY_URL=https://gotify.isnadboy.com/message
       # - GOTIFY_TOKEN=your_app_token
       # - GOTIFY_TITLE=DNS Health Check FAILED
