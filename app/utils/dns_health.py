@@ -26,12 +26,9 @@ class DNSHealthCheck:
         ns_lan: str = None,
         admin_url: str = None,
         timeout: float = 2.0,
-        # Notification settings
-        gotify_enabled: bool = None,
-        gotify_url: str = None,
-        gotify_token: str = None,
-        gotify_title: str = None,
-        gotify_priority: int = None
+        # Healthchecks.io settings
+        healthchecks_enabled: bool = None,
+        healthchecks_ping_url: str = None
     ):
         """Initialize DNS health checker
 
@@ -41,11 +38,8 @@ class DNSHealthCheck:
             ns_lan: LAN nameserver IP (optional)
             admin_url: Technitium admin URL for HTTP check (optional)
             timeout: Query timeout in seconds
-            gotify_enabled: Enable Gotify notifications
-            gotify_url: Gotify message URL
-            gotify_token: Gotify app token
-            gotify_title: Gotify notification title
-            gotify_priority: Gotify message priority
+            healthchecks_enabled: Enable Healthchecks.io monitoring
+            healthchecks_ping_url: Healthchecks.io ping URL (e.g., https://hc-ping.com/uuid)
         """
         self.name = name or os.getenv("DNS_CHECK_NAME", "sonarr.isnadboy.com")
         self.ns_ts = ns_ts or os.getenv("DNS_CHECK_NS_TS", "100.65.231.21")
@@ -53,12 +47,9 @@ class DNSHealthCheck:
         self.admin_url = admin_url or os.getenv("DNS_CHECK_ADMIN_URL", "")
         self.timeout = timeout
 
-        # Notification configuration
-        self.gotify_enabled = gotify_enabled if gotify_enabled is not None else os.getenv("GOTIFY_ENABLED", "false").lower() == "true"
-        self.gotify_url = gotify_url or os.getenv("GOTIFY_URL", "")
-        self.gotify_token = gotify_token or os.getenv("GOTIFY_TOKEN", "")
-        self.gotify_title = gotify_title or os.getenv("GOTIFY_TITLE", "DNS Health Check FAILED")
-        self.gotify_priority = gotify_priority or int(os.getenv("GOTIFY_PRIORITY", "5"))
+        # Healthchecks.io configuration
+        self.healthchecks_enabled = healthchecks_enabled if healthchecks_enabled is not None else os.getenv("HEALTHCHECKS_ENABLED", "false").lower() == "true"
+        self.healthchecks_ping_url = healthchecks_ping_url or os.getenv("HEALTHCHECKS_PING_URL", "")
 
     def query_a(self, server: str, name: str) -> bool:
         """Query A record from DNS server
@@ -114,60 +105,46 @@ class DNSHealthCheck:
             logger.error(f"HTTP check error: {url}: {e}")
             return False
 
-    def _http_post(self, url: str, data: bytes, headers: Optional[Dict[str, str]] = None, timeout: float = 3) -> bool:
-        """Internal HTTP POST helper
+    def ping_healthchecks(self, success: bool, error_message: str = None) -> bool:
+        """Ping Healthchecks.io with check status
 
         Args:
-            url: URL to POST to
-            data: Request body (JSON encoded)
-            headers: Request headers
-            timeout: Request timeout
+            success: True if check passed, False if failed
+            error_message: Optional error details to send on failure
 
         Returns:
-            True if POST succeeded (2xx status)
+            True if ping succeeded
         """
-        if headers is None:
-            headers = {}
-        try:
-            req = Request(url, data=data, headers=headers)
-            with urlopen(req, timeout=timeout) as resp:
-                return 200 <= resp.status < 300
-        except Exception as e:
-            logger.debug(f"HTTP POST failed to {url}: {e}")
+        if not self.healthchecks_enabled:
+            logger.debug("Healthchecks.io monitoring disabled")
             return False
 
-    def notify(self, message: str) -> bool:
-        """Send notification via Gotify
-
-        Args:
-            message: Notification message
-
-        Returns:
-            True if notification sent successfully
-        """
-        if not self.gotify_enabled:
-            logger.debug("Gotify notifications disabled")
-            return False
-
-        if not self.gotify_url or not self.gotify_token:
-            logger.warning("Gotify enabled but URL or token not configured")
+        if not self.healthchecks_ping_url:
+            logger.warning("Healthchecks.io enabled but ping URL not configured")
             return False
 
         try:
-            data = json.dumps({
-                "title": self.gotify_title,
-                "message": message,
-                "priority": self.gotify_priority
-            }).encode()
-            headers = {
-                "Content-Type": "application/json",
-                "X-Gotify-Key": self.gotify_token
-            }
-            if self._http_post(self.gotify_url, data, headers):
-                logger.info("Sent notification via Gotify")
-                return True
+            if success:
+                # Success: Simple GET to ping URL
+                url = self.healthchecks_ping_url
+                logger.debug(f"Pinging Healthchecks.io (success): {url}")
+                with urlopen(url, timeout=10) as resp:
+                    if 200 <= resp.status < 300:
+                        logger.info("Healthchecks.io ping successful (OK)")
+                        return True
+            else:
+                # Failure: POST to /fail endpoint with error details
+                url = f"{self.healthchecks_ping_url}/fail"
+                logger.debug(f"Pinging Healthchecks.io (failure): {url}")
+
+                data = error_message.encode('utf-8') if error_message else b""
+                req = Request(url, data=data, headers={"Content-Type": "text/plain"})
+                with urlopen(req, timeout=10) as resp:
+                    if 200 <= resp.status < 300:
+                        logger.info("Healthchecks.io ping successful (FAIL)")
+                        return True
         except Exception as e:
-            logger.warning(f"Failed to send Gotify notification: {e}")
+            logger.warning(f"Failed to ping Healthchecks.io: {e}")
 
         return False
 
@@ -235,8 +212,13 @@ class DNSHealthCheck:
 
         if all_ok:
             logger.info("DNS health check PASSED")
+            # Ping Healthchecks.io on success
+            self.ping_healthchecks(success=True)
         else:
             logger.warning(f"DNS health check FAILED: {errors}")
+            # Ping Healthchecks.io on failure with error details
+            error_msg = f"DNS health check FAILED for {self.name}\n" + "\n".join(errors)
+            self.ping_healthchecks(success=False, error_message=error_msg)
 
         return result
 
@@ -253,21 +235,13 @@ def get_dns_health_checker() -> DNSHealthCheck:
     return _health_checker
 
 
-def perform_dns_health_check(send_notification: bool = False) -> Dict[str, Any]:
+def perform_dns_health_check() -> Dict[str, Any]:
     """Perform DNS health check using module singleton
 
-    Args:
-        send_notification: If True, send notification on failure
+    Automatically pings Healthchecks.io if enabled.
 
     Returns:
         Health check result dictionary
     """
     checker = get_dns_health_checker()
-    result = checker.perform_check()
-
-    # Send notification if check failed and notifications are enabled
-    if send_notification and not result['ok']:
-        message = f"DNS health check FAILED for {checker.name} (TS:{checker.ns_ts}, LAN:{checker.ns_lan or '-'}, ADMIN:{checker.admin_url or '-'})\nErrors: {', '.join(result['errors'])}"
-        checker.notify(message)
-
-    return result
+    return checker.perform_check()
