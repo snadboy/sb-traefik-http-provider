@@ -12,6 +12,7 @@ services:
     networks:
       - traefik
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Required for is_local hosts
       - ./config/provider-config.yaml:/app/config/provider-config.yaml:ro
       - ./config/ssh-hosts.yaml:/app/config/ssh-hosts.yaml:ro
       - ./logs:/var/log/sb-traefik-provider  # Persistent log storage
@@ -20,12 +21,13 @@ services:
     environment:
       - LOG_LEVEL=DEBUG
       - LOG_DIR=/var/log/sb-traefik-provider
+      
       - LOG_JSON=false  # Set to true for JSON logging
       - PYTHONUNBUFFERED=1
       - WORKERS=2  # Number of uvicorn workers
       # DNS Health Check (optional)
       - DNS_HEALTH_CHECK_ENABLED=false  # Set to true to enable
-      - DNS_CHECK_NAME=sonarr.isnadboy.com
+      - DNS_CHECK_NAME=sonarr.isnadboy.comqa1 `
       - DNS_CHECK_NS_TS=100.65.231.21
       - DNS_CHECK_NS_LAN=192.168.86.76
       # - DNS_CHECK_ADMIN_URL=https://dns.isnadboy.com
