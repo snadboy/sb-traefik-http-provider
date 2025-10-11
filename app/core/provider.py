@@ -123,6 +123,28 @@ class TraefikProvider:
                 logger.error(error_msg)
                 raise FileNotFoundError(error_msg)
 
+            # Log host configuration details before creating client
+            logger.info(f"Loading SSH hosts configuration from: {ssh_hosts_path}")
+            with open(ssh_hosts_path, 'r') as f:
+                hosts_config = yaml.safe_load(f)
+
+            defaults = hosts_config.get('defaults', {})
+            logger.info(f"Configuration defaults: user={defaults.get('user')}, port={defaults.get('port')}, enabled={defaults.get('enabled')}")
+
+            hosts = hosts_config.get('hosts', {})
+            logger.info(f"Found {len(hosts)} host(s) in configuration:")
+            for host_name, host_config in hosts.items():
+                enabled = host_config.get('enabled', defaults.get('enabled', True))
+                is_local = host_config.get('is_local', False)
+                hostname = host_config.get('hostname', host_name)
+                user = host_config.get('user', defaults.get('user', 'root'))
+                port = host_config.get('port', defaults.get('port', 22))
+                description = host_config.get('description', '')
+
+                logger.info(f"  - {host_name}: enabled={enabled}, is_local={is_local}, hostname={hostname}, user={user}, port={port}")
+                if description:
+                    logger.info(f"    Description: {description}")
+
             # Create the base client
             base_client = SSHDockerClient(config_file=ssh_hosts_path)
 
