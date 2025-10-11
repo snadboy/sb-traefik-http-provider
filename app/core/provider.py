@@ -255,12 +255,14 @@ class TraefikProvider:
 
         # Check if static routes are enabled
         if not self.config.get('enable_static_routes', False):
-            logger.debug("Static routes disabled in configuration")
+            logger.info("Static routes disabled in configuration")
             return static_routes
 
         static_routes_file = self.config.get('static_routes_file', 'config/static-routes.yaml')
+        logger.info(f"Loading static routes from: {static_routes_file}")
+
         if not os.path.exists(static_routes_file):
-            logger.warning(f"Static routes file {static_routes_file} not found")
+            logger.warning(f"Static routes file not found: {static_routes_file}")
             return static_routes
 
         try:
@@ -268,14 +270,14 @@ class TraefikProvider:
                 routes_config = yaml.safe_load(f)
 
             raw_routes = routes_config.get('static_routes', [])
-            logger.info(f"Loading {len(raw_routes)} static routes from {static_routes_file}")
+            logger.info(f"Found {len(raw_routes)} static route(s) in configuration:")
 
-            for route in raw_routes:
+            for idx, route in enumerate(raw_routes, 1):
                 domain = route.get('domain')
                 target = route.get('target')
 
                 if not domain or not target:
-                    logger.warning(f"Skipping invalid static route: {route}")
+                    logger.warning(f"  [{idx}] INVALID - missing domain or target: {route}")
                     continue
 
                 # Apply defaults similar to container routes
@@ -293,7 +295,12 @@ class TraefikProvider:
                 }
 
                 static_routes.append(static_route)
-                logger.debug(f"Loaded static route: {domain} -> {target}")
+                logger.info(f"  [{idx}] {domain} -> {target}")
+                logger.info(f"      https={https_enabled}, redirect_https={redirect_https}")
+                if description:
+                    logger.info(f"      Description: {description}")
+
+            logger.info(f"Successfully loaded {len(static_routes)} static route(s)")
 
         except Exception as e:
             logger.error(f"Failed to load static routes from {static_routes_file}: {e}")
