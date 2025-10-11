@@ -249,7 +249,7 @@ class TailscaleStatusModel(BaseModel):
     ssh_keys_scanned: int = Field(default=0, description="Number of SSH keys scanned")
 
 
-class SSHHostStatus(BaseModel):
+class SSHHostConnectivity(BaseModel):
     """SSH host connectivity status"""
     reachable: bool = Field(..., description="Whether host is reachable")
     running_count: int = Field(default=0, description="Number of running containers")
@@ -281,6 +281,6 @@ class EnvironmentDiagnosticsResponse(BaseModel):
     dns_config: DNSConfigModel = Field(..., description="DNS configuration")
     network_config: NetworkConfigModel = Field(..., description="Network configuration")
     tailscale_status: TailscaleStatusModel = Field(..., description="Tailscale status")
-    ssh_connectivity: Dict[str, SSHHostStatus] = Field(default_factory=dict, description="SSH host connectivity")
+    ssh_connectivity: Dict[str, SSHHostConnectivity] = Field(default_factory=dict, description="SSH host connectivity")
     cache_status: CacheStatusModel = Field(..., description="Cache status")
     event_listeners: Dict[str, EventListenerStatus] = Field(default_factory=dict, description="Event listener status")
