@@ -168,8 +168,8 @@ class TraefikProvider:
         """Get list of enabled hosts from SSH Docker client (respects is_local transformations)"""
         try:
             # Use the SSH client's host list which properly handles is_local transformations
-            all_hosts = self.ssh_client.hosts_config.get_all_hosts()
-            enabled_hosts = [name for name, config in all_hosts.items() if config.enabled]
+            enabled_hosts_dict = self.ssh_client.hosts_config.get_enabled_hosts()
+            enabled_hosts = list(enabled_hosts_dict.keys())
 
             logger.debug(f"Found enabled hosts: {enabled_hosts}")
             return enabled_hosts
