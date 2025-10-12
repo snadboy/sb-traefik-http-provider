@@ -1,5 +1,5 @@
 # Core dependencies
-snadboy-ssh-docker>=0.4.2
+snadboy-ssh-docker>=0.4.3
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
