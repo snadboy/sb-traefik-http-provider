@@ -127,6 +127,21 @@ class ContainerListResponse(BaseModel):
     host: Optional[str] = Field(None, description="SSH host queried")
 
 
+class ContainerPortMapping(BaseModel):
+    """Container port mapping details"""
+    internal: int = Field(..., description="Internal container port")
+    external: Optional[int] = Field(None, description="External mapped port (if published)")
+    protocol: str = Field(default="tcp", description="Port protocol (tcp/udp)")
+
+
+class DetailedContainerInfo(BaseModel):
+    """Detailed container information for status endpoint"""
+    id: str = Field(..., description="Container ID")
+    name: str = Field(..., description="Container name")
+    ports: List[ContainerPortMapping] = Field(default_factory=list, description="Port mappings")
+    snadboy_labels: Dict[str, str] = Field(default_factory=dict, description="All snadboy.* labels")
+
+
 class SSHHostStatus(BaseModel):
     """SSH host connection status"""
     hostname: str = Field(..., description="SSH hostname")
@@ -138,7 +153,8 @@ class SSHHostStatus(BaseModel):
     connection_time_ms: Optional[int] = Field(None, description="Last connection time in milliseconds")
     docker_version: Optional[str] = Field(None, description="Docker version on host")
     containers_total: Optional[int] = Field(None, description="Total containers on host")
-    containers_running: Optional[int] = Field(None, description="Running containers on host")
+    containers_running: Optional[int] = Field(None, description="Number of running containers")
+    containers_running_details: List[DetailedContainerInfo] = Field(default_factory=list, description="Detailed info for running containers")
 
 
 class ProviderConfiguration(BaseModel):

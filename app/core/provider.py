@@ -812,6 +812,83 @@ class TraefikProvider:
             connection_time = int((time.time() - start_time) * 1000)
             total_containers = len(running_containers) + len(stopped_containers)
 
+            # Build detailed container info for running containers
+            containers_running_details = []
+            logger.debug(f"Processing {len(running_containers)} running containers for detailed info")
+            for container in running_containers:
+                try:
+                    # Extract container ID and name
+                    container_id = container.get('ID', '')
+                    raw_names = container.get('Names', container.get('Name', ''))
+                    logger.debug(f"Container {container_id[:12]}: Ports={container.get('Ports')}, Labels count={len(container.get('Labels', {}))}")
+                    if isinstance(raw_names, list):
+                        container_name = raw_names[0].strip('/') if raw_names else 'unknown'
+                    elif isinstance(raw_names, str):
+                        container_name = raw_names.strip('/')
+                    else:
+                        container_name = 'unknown'
+
+                    # Extract port mappings
+                    port_mappings = []
+                    ports_raw = container.get('Ports', '')
+                    # Ports can be a string like "9090/tcp, 0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp"
+                    if isinstance(ports_raw, str) and ports_raw:
+                        for port_str in ports_raw.split(', '):
+                            port_str = port_str.strip()
+                            # Parse "0.0.0.0:8081->8080/tcp" or "8080/tcp"
+                            match = re.match(r'(?:[\d\.\:]+:)?(\d+)->(\d+)/(\w+)', port_str)
+                            if match:
+                                external_port, internal_port, protocol = match.groups()
+                                # Skip IPv6 duplicates (we already have IPv4)
+                                existing = any(p['internal'] == int(internal_port) and p['external'] == int(external_port)
+                                             for p in port_mappings)
+                                if not existing:
+                                    port_mappings.append({
+                                        'internal': int(internal_port),
+                                        'external': int(external_port),
+                                        'protocol': protocol
+                                    })
+                            else:
+                                match = re.match(r'(\d+)/(\w+)', port_str)
+                                if match:
+                                    internal_port, protocol = match.groups()
+                                    # Only add if not already added
+                                    existing = any(p['internal'] == int(internal_port) and p['external'] is None
+                                                 for p in port_mappings)
+                                    if not existing:
+                                        port_mappings.append({
+                                            'internal': int(internal_port),
+                                            'external': None,
+                                            'protocol': protocol
+                                        })
+
+                    # Extract snadboy labels
+                    snadboy_labels = {}
+                    labels_raw = container.get('Labels', {})
+                    # Labels can be a dict (from /api/containers) or comma-separated string (from list_containers in check_ssh_host_health)
+                    if isinstance(labels_raw, dict):
+                        for key, value in labels_raw.items():
+                            if key.startswith('snadboy.'):
+                                snadboy_labels[key] = value
+                    elif isinstance(labels_raw, str) and labels_raw:
+                        # Parse comma-separated labels like "key1=value1,key2=value2"
+                        for label_pair in labels_raw.split(','):
+                            if '=' in label_pair:
+                                key, value = label_pair.split('=', 1)
+                                key = key.strip()
+                                value = value.strip()
+                                if key.startswith('snadboy.'):
+                                    snadboy_labels[key] = value
+
+                    containers_running_details.append({
+                        'id': container_id,
+                        'name': container_name,
+                        'ports': port_mappings,
+                        'snadboy_labels': snadboy_labels
+                    })
+                except Exception as e:
+                    logger.debug(f"Error processing container {container.get('ID', 'unknown')[:12]}: {e}")
+
             status.update({
                 'status': 'connected',
                 'connection_time_ms': connection_time,
@@ -823,7 +900,8 @@ class TraefikProvider:
                 'stopped_names': stopped_names,
                 'with_labels_names': with_labels_names,
                 'containers_total': total_containers,
-                'containers_running': len(running_containers)
+                'containers_running': len(running_containers),
+                'containers_running_details': containers_running_details
             })
 
             # Docker version detection not implemented yet
