@@ -810,6 +810,8 @@ class TraefikProvider:
                 with_labels_count = len(with_labels_names)
 
             connection_time = int((time.time() - start_time) * 1000)
+            total_containers = len(running_containers) + len(stopped_containers)
+
             status.update({
                 'status': 'connected',
                 'connection_time_ms': connection_time,
@@ -819,15 +821,14 @@ class TraefikProvider:
                 'with_labels_count': with_labels_count,
                 'running_names': running_names,
                 'stopped_names': stopped_names,
-                'with_labels_names': with_labels_names
+                'with_labels_names': with_labels_names,
+                'containers_total': total_containers,
+                'containers_running': len(running_containers)
             })
 
-            # Try to get Docker version
-            try:
-                docker_info = await self.ssh_client.get_docker_info(host)
-                status['docker_version'] = docker_info.get('ServerVersion', 'unknown')
-            except Exception:
-                pass  # Docker version is optional
+            # Docker version detection not implemented yet
+            # Would require adding execute_command method to snadboy-ssh-docker library
+            status['docker_version'] = None
 
         except Exception as e:
             connection_time = int((time.time() - start_time) * 1000)
