@@ -165,21 +165,11 @@ class TraefikProvider:
             raise
 
     def _get_enabled_hosts(self) -> List[str]:
-        """Get list of enabled hosts from SSH hosts configuration"""
+        """Get list of enabled hosts from SSH Docker client (respects is_local transformations)"""
         try:
-            ssh_hosts_file = self.config.get('ssh_hosts_file', 'config/ssh-hosts.yaml')
-            if not os.path.exists(ssh_hosts_file):
-                logger.warning(f"SSH hosts file {ssh_hosts_file} not found")
-                return []
-
-            with open(ssh_hosts_file, 'r') as f:
-                ssh_config = yaml.safe_load(f)
-
-            enabled_hosts = []
-            hosts = ssh_config.get('hosts', {})
-            for host_name, host_config in hosts.items():
-                if host_config.get('enabled', True):
-                    enabled_hosts.append(host_name)
+            # Use the SSH client's host list which properly handles is_local transformations
+            all_hosts = self.ssh_client.hosts_config.get_all_hosts()
+            enabled_hosts = [name for name, config in all_hosts.items() if config.enabled]
 
             logger.debug(f"Found enabled hosts: {enabled_hosts}")
             return enabled_hosts
