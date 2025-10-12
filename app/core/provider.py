@@ -1071,6 +1071,7 @@ class TraefikProvider:
 
         # Get host config
         host_config = self.ssh_client.hosts_config.get_host_config(host)
+        logger.debug(f"Event listener for {host}: is_local={host_config.is_local}, hostname={host_config.hostname}")
 
         while not self._shutdown_event.is_set():
             process = None
