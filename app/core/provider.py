@@ -64,7 +64,7 @@ class TraefikProvider:
     """Manages Docker discovery and Traefik configuration generation"""
 
     def __init__(self):
-        self.ssh_client = None
+        self.ssh_client: Optional[Any] = None
         self._initialize_client()
 
         # Diagnostic tracking

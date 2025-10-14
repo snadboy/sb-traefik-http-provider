@@ -1,762 +1,302 @@
 # SB Traefik HTTP Provider
 
-A high-performance FastAPI-based HTTP provider for Traefik that discovers Docker containers across multiple SSH-accessible hosts using the snadboy-ssh-docker library. Uses simplified `snadboy.revp` labels instead of complex Traefik label syntax.
+A high-performance FastAPI HTTP provider for Traefik that discovers Docker containers across multiple SSH-accessible hosts. Uses simplified `snadboy.revp` labels instead of complex Traefik syntax.
 
-## Features
+## Key Features
 
-- **Event-Driven Architecture**: Real-time Docker event streams from all hosts with intelligent caching
-- **Multi-host Docker Discovery**: Discover containers across multiple Docker hosts via Tailscale SSH
-- **Dynamic Configuration**: Automatically generate Traefik routing configuration from container labels
-- **Instant Updates**: Configuration cached in memory with automatic refresh on container events
-- **Smart Debouncing**: Batches multiple events together to reduce unnecessary updates (2s delay)
-- **Simplified Label Syntax**: Uses `snadboy.revp` labels for easier container configuration
-- **Tailscale MagicDNS**: Leverages Tailscale's MagicDNS (100.100.100.100) for automatic hostname resolution
-- **Bridge Networking**: Proper container isolation with explicit port mappings instead of host networking
-- **Automatic SSH Setup**: Python-based SSH known_hosts initialization with robust error handling
-- **Zero-Config Authentication**: Uses Tailscale for authentication - no SSH keys required
-- **FastAPI Framework**: Native async/await support with automatic API documentation
-- **Type Safety**: Pydantic models for request/response validation
-- **Comprehensive Diagnostics**: Environment info, cache status, event listener stats
-- **Health Checks**: Endpoints for monitoring provider health
-- **Prometheus Metrics**: Export metrics for monitoring
-- **VSCode Remote Debugging**: Full debugging support with minimal overhead
-- **Auto-generated Documentation**: Interactive API docs at `/docs` and `/redoc`
+- **Event-Driven**: Real-time Docker event streams with intelligent caching and 2s debouncing
+- **Multi-Host Discovery**: Monitor containers across multiple Docker hosts via Tailscale SSH
+- **Simplified Labels**: `snadboy.revp.PORT.domain=example.com` instead of 10+ Traefik labels
+- **Zero-Config SSH**: Tailscale authentication - no key management required
+- **HTTPS by Default**: Automatic Let's Encrypt with wildcard certificate support
+- **Static Routes**: Route non-Docker services (network devices, VMs, etc.)
+- **FastAPI**: Native async/await with auto-generated docs at `/docs`
 
-## Quick Deploy (Production)
+## Quick Start
 
-Deploy the published Docker image in minutes:
+### 1. Setup Tailscale
 
-### 1. Download Example Configuration
-
+Install Tailscale on all Docker hosts and enable SSH:
 ```bash
-# Download the deployment example
-wget https://github.com/snadboy/sb-traefik-http-provider/archive/refs/heads/main.zip
-unzip main.zip
-cd sb-traefik-http-provider-main/examples/
-
-# Or clone the repository
-git clone https://github.com/snadboy/sb-traefik-http-provider.git
-cd sb-traefik-http-provider/examples/
+tailscale up --ssh
 ```
 
-### 2. Set Up Configuration
+### 2. Configure Hosts
 
-```bash
-# Create required directories
-mkdir -p config traefik-dynamic logs
+Create `config/ssh-hosts.yaml`:
+```yaml
+defaults:
+  user: root
+  port: 22
+  enabled: true
 
-# Copy and customize configuration files
-cp ../config/*.example.yaml config/
-cp ../traefik-dynamic/*.example.yml traefik-dynamic/
-cp ../.env.example .env
+hosts:
+  dev:
+    hostname: dev.tail-scale.ts.net
+    description: Development server
 
-# Edit configurations for your setup
-nano config/ssh-hosts.yaml     # Define your Docker hosts with Tailscale hostnames
-nano .env                       # Add Cloudflare API token
-nano docker-compose.yml        # Update domain names
+  prod:
+    hostname: prod.tail-scale.ts.net
+    description: Production server
 ```
 
 ### 3. Deploy
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
-
-### 4. Verify
-
-```bash
-# Check provider health
-curl http://localhost:8081/health
-
-# View configuration
-curl http://localhost:8081/api/traefik/config
-```
-
-That's it! Your containers with `snadboy.revp` labels will now be automatically routed with HTTPS.
-
-## Development Setup
-
-For development or building from source:
-
-### 1. Setup Tailscale
-
-**Tailscale Requirements:**
-- Install Tailscale on all Docker hosts
-- Enable SSH in Tailscale: `tailscale up --ssh`
-- Ensure all hosts are on the same Tailnet
-- Use Tailscale hostnames (e.g., `host.tail-scale.ts.net`) in configuration
-
-**Benefits:**
-- No SSH key management required
-- Automatic encryption and authentication
-- Zero-trust network security
-- Simplified host access management
-
-### 2. Configure SSH Hosts
-
-Copy the example and customize:
-```bash
-cp config/ssh-hosts.example.yaml config/ssh-hosts.yaml
-```
-
-Edit `config/ssh-hosts.yaml` to define your Docker hosts:
-
-```yaml
-hosts:
-  dev:
-    hostname: dev  # Tailscale hostname (resolved via MagicDNS)
-    user: docker
-    port: 22
-    description: Development Docker host
-    enabled: true
-  prod:
-    hostname: prod  # Tailscale hostname (resolved via MagicDNS)
-    user: docker
-    port: 22
-    description: Production Docker host
-    enabled: true
-```
-
-**Note**: Use short Tailscale hostnames (e.g., `dev`, `prod`) rather than full domain names. MagicDNS will automatically resolve these through the configured DNS server (100.100.100.100).
-
-### 2. Run with Docker Compose
-
-```bash
-docker-compose up -d
-```
-
-This will start:
-- The HTTP provider on port 8081
-- Traefik on ports 80/443
-- Example containers (whoami, test-revp-app)
-
-### 3. Access Services
-
-- Provider API: http://localhost:8081/api/traefik/config
-- API Documentation: http://localhost:8081/docs
-- Traefik Dashboard: http://localhost:8080
-- Test App: http://test.localhost (or configure your own domain)
 
 ## Container Labels
 
-The provider uses simplified `snadboy.revp.{PORT}.{SETTING}` labels for automatic Traefik configuration.
+### Basic Usage
 
-### Required Labels
-
-- **`snadboy.revp.{PORT}.domain`** - The domain for accessing the service
-  - Example: `snadboy.revp.80.domain=myapp.example.com`
-
-### Optional Labels (with defaults)
-
-#### Backend Configuration
-- **`snadboy.revp.{PORT}.backend-proto`** - Backend protocol
-  - **Default:** `http`
-  - **Options:** `http`, `https`
-  - Example: `snadboy.revp.80.backend-proto=https`
-
-- **`snadboy.revp.{PORT}.backend-path`** - Backend path
-  - **Default:** `/`
-  - Example: `snadboy.revp.80.backend-path=/api/v1`
-
-#### HTTPS/TLS Configuration
-- **`snadboy.revp.{PORT}.https`** - Enable HTTPS with automatic Let's Encrypt certificates
-  - **Default:** `true`
-  - **Options:** `true`, `false`
-  - Example: `snadboy.revp.80.https=false` (HTTP only)
-
-- **`snadboy.revp.{PORT}.redirect-https`** - Automatically redirect HTTP to HTTPS
-  - **Default:** `true`
-  - **Options:** `true`, `false`
-  - Example: `snadboy.revp.80.redirect-https=false` (allow both HTTP and HTTPS)
-
-### Label Format
-
-```
-snadboy.revp.{INTERNAL_PORT}.{SETTING}={VALUE}
+```yaml
+services:
+  myapp:
+    image: myapp:latest
+    labels:
+      - "snadboy.revp.80.domain=myapp.example.com"
 ```
 
-- **`{INTERNAL_PORT}`**: Container's internal port (e.g., `80`, `8080`, `3000`)
-- **`{SETTING}`**: Configuration setting (see labels above)
-- **`{VALUE}`**: Setting value
+Result: `https://myapp.example.com` → container port 80 (HTTPS with auto-redirect)
 
-## HTTPS and SSL/TLS
+### All Options
 
-By default, all services automatically get:
-- ✅ **HTTPS enabled** with Let's Encrypt certificates
-- ✅ **HTTP to HTTPS redirect** for security
-- ✅ **Automatic certificate renewal**
+```yaml
+labels:
+  # Required
+  - "snadboy.revp.PORT.domain=myapp.example.com"
 
-### Certificate Storage
-
-Let's Encrypt certificates are stored in a **local Docker volume** (`letsencrypt-data`) rather than on NAS/NFS storage. This design choice ensures:
-
-- **Proper permissions**: ACME requires strict 600 permissions on `acme.json`, which NFS often can't provide
-- **Reliability**: No NFS permission conflicts or mount issues
-- **Simplicity**: Traefik manages everything automatically
-- **Low risk**: With wildcard certificates (`*.domain.com`), only one certificate is needed for all services
-
-Since Let's Encrypt certificates are free and automatically renewable, losing the local volume simply triggers a new certificate request, well within rate limits for wildcard certificates.
+  # Optional (defaults shown)
+  - "snadboy.revp.PORT.https=true"              # Enable HTTPS
+  - "snadboy.revp.PORT.redirect-https=true"     # HTTP→HTTPS redirect
+  - "snadboy.revp.PORT.backend-proto=http"      # Backend protocol
+  - "snadboy.revp.PORT.backend-path=/"          # Backend path
+```
 
 ### Examples
 
-#### Basic Web Application (HTTPS by default)
+**HTTP Only (internal services):**
 ```yaml
-labels:
-  - "snadboy.revp.80.domain=myapp.example.com"
-  # Automatically gets: HTTPS + HTTP redirect + Let's Encrypt certificate
-```
-**Result**:
-- `http://myapp.example.com` → redirects to HTTPS
-- `https://myapp.example.com` → serves the application
-
-#### HTTP-Only Service (internal/development)
-```yaml
-labels:
-  - "snadboy.revp.80.domain=internal-api.example.com"
-  - "snadboy.revp.80.https=false"
-```
-**Result**: Only `http://internal-api.example.com` (no HTTPS)
-
-#### Both HTTP and HTTPS (no redirect)
-```yaml
-labels:
-  - "snadboy.revp.80.domain=api.example.com"
-  - "snadboy.revp.80.redirect-https=false"
-```
-**Result**: Both protocols work without redirect
-- `http://api.example.com` → serves HTTP
-- `https://api.example.com` → serves HTTPS
-
-#### API with Custom Backend
-```yaml
-labels:
-  - "snadboy.revp.8080.domain=api.example.com"
-  - "snadboy.revp.8080.backend-path=/api/v1"
-  - "snadboy.revp.8080.backend-proto=https"
-```
-**Result**: HTTPS frontend → HTTPS backend
-
-#### Multiple Ports with Different Configs
-```yaml
-labels:
-  - "snadboy.revp.80.domain=app.example.com"
-  - "snadboy.revp.9090.domain=metrics.example.com"
-  - "snadboy.revp.9090.backend-path=/metrics"
-  - "snadboy.revp.9090.https=false"  # Internal metrics, HTTP only
+- "snadboy.revp.80.domain=internal.local"
+- "snadboy.revp.80.https=false"
 ```
 
-#### Complete Example from compose.yml
+**HTTPS without redirect:**
 ```yaml
-my-app:
-  image: nginx:alpine
-  labels:
-    - "snadboy.revp.80.domain=myapp.example.com"
-    # Gets HTTPS + redirect automatically
+- "snadboy.revp.80.domain=api.example.com"
+- "snadboy.revp.80.redirect-https=false"
 ```
 
-### Comparison: snadboy.revp vs Traditional Traefik Labels
-
-The simplified `snadboy.revp` labels provide a much cleaner alternative to traditional Traefik labels:
-
-#### Traditional Traefik Labels (Complex)
+**Custom backend:**
 ```yaml
-labels:
-  - "traefik.enable=true"
-  - "traefik.http.routers.myapp.rule=Host(`myapp.example.com`)"
-  - "traefik.http.routers.myapp.service=myapp-service"
-  - "traefik.http.routers.myapp.entrypoints=web"
-  - "traefik.http.services.myapp-service.loadbalancer.server.port=8080"
-  - "traefik.http.services.myapp-service.loadbalancer.server.scheme=http"
+- "snadboy.revp.8080.domain=api.example.com"
+- "snadboy.revp.8080.backend-proto=https"
+- "snadboy.revp.8080.backend-path=/v1"
 ```
 
-#### snadboy.revp Labels (Simple)
+**Multiple ports:**
 ```yaml
-labels:
-  - "snadboy.revp.8080.domain=myapp.example.com"
-  # That's it! backend-proto=http and backend-path=/ are defaults
+- "snadboy.revp.80.domain=web.example.com"
+- "snadboy.revp.9090.domain=metrics.example.com"
+- "snadboy.revp.9090.https=false"
 ```
-
-#### Advanced Traditional Example (HTTPS with redirect)
-```yaml
-labels:
-  - "traefik.enable=true"
-  # HTTPS router
-  - "traefik.http.routers.api-https.rule=Host(`api.example.com`)"
-  - "traefik.http.routers.api-https.entrypoints=websecure"
-  - "traefik.http.routers.api-https.tls=true"
-  - "traefik.http.routers.api-https.tls.certresolver=letsencrypt"
-  - "traefik.http.routers.api-https.service=api-service"
-  # HTTP redirect router
-  - "traefik.http.routers.api-http.rule=Host(`api.example.com`)"
-  - "traefik.http.routers.api-http.entrypoints=web"
-  - "traefik.http.routers.api-http.middlewares=api-redirect"
-  - "traefik.http.middlewares.api-redirect.redirectscheme.scheme=https"
-  # Service
-  - "traefik.http.services.api-service.loadbalancer.server.port=8080"
-  - "traefik.http.services.api-service.loadbalancer.server.scheme=https"
-```
-
-#### snadboy.revp Equivalent
-```yaml
-labels:
-  - "snadboy.revp.8080.domain=api.example.com"
-  - "snadboy.revp.8080.backend-proto=https"
-  # HTTPS + redirect are automatic defaults!
-```
-
-**Benefits of snadboy.revp:**
-- 🎯 **Simpler**: 1-2 labels instead of 10+ labels
-- 🚀 **Faster setup**: Less configuration needed
-- 🔒 **HTTPS by default**: Automatic Let's Encrypt certificates
-- 🐛 **Fewer errors**: Less complex syntax to get wrong
-- 📖 **More readable**: Clear, intuitive label names
-
-## Let's Encrypt Configuration
-
-The provider uses **Cloudflare DNS challenge** for Let's Encrypt SSL certificates. This method works behind firewalls, doesn't require port 80, and can issue wildcard certificates.
-
-### Setup
-
-1. **Create Cloudflare API Token**:
-   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens)
-   - Create token with permissions:
-     - `Zone:DNS:Edit`
-     - `Zone:Zone:Read`
-   - Include all zones or specifically your domain
-
-2. **Configure API Token**:
-   ```bash
-   # Copy the example file
-   cp .env.example .env
-
-   # Edit .env and add your token
-   CF_DNS_API_TOKEN=your-actual-cloudflare-api-token
-   ```
-
-3. **Update Email in compose.yml**:
-   Replace `your-email@example.com` with your actual email address
-
-4. **Switch to Production** (after testing):
-   ```yaml
-   # For production (in compose.yml):
-   - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
-
-   # For staging/testing (default):
-   - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
-   ```
-
-### Wildcard Certificate
-
-This setup uses a **single wildcard certificate** for all subdomains:
-- Main domain: `isnadboy.com`
-- Wildcard: `*.isnadboy.com`
-
-This means:
-- One certificate covers ALL subdomains
-- No rate limit issues with many services
-- New services automatically use the existing certificate
-- Faster startup (no per-service cert requests)
-
-### Benefits of DNS Challenge
-- ✅ Works behind firewalls/NAT
-- ✅ No need for port 80 to be open
-- ✅ Enables wildcard certificates (`*.isnadboy.com`)
-- ✅ Works while migrating from other reverse proxies
-
-### Important Notes
-- **Never commit .env file** - It contains your API token
-- Let's Encrypt rate limits: 50 certificates per domain per week
-- Always test with staging server first
-- Certificates auto-renew 30 days before expiration
 
 ## Static Routes
 
-For services outside of Docker containers (e.g., network devices, VMs), you can define static routes that work alongside container-based routes.
-
-### Configuration
-
-Define routes in `config/static-routes.yaml`:
+For services outside Docker (network devices, VMs), create `config/static-routes.yaml`:
 
 ```yaml
-   static_routes:
-     - domain: unifi-gateway.isnadboy.com
-       target: https://192.168.86.78:8006
-       description: "UniFi Network Gateway"
-       https: true          # Optional: Enable HTTPS (default: true)
-       redirect-https: true # Optional: HTTP→HTTPS redirect (default: true)
+static_routes:
+  - domain: router.example.com
+    target: https://192.168.1.1
+    description: "Network Router"
+    https: true
+    redirect-https: true
 
-     - domain: proxmox.isnadboy.com
-       target: https://192.168.1.100:8006
-       description: "Proxmox Virtual Environment"
-
-     - domain: internal-api.isnadboy.com
-       target: http://192.168.1.200:8080
-       description: "Internal API Server"
-       https: false         # HTTP only
-   ```
-
-### Features
-
-- ✅ **Same HTTPS behavior** as container services
-- ✅ **Wildcard certificate** automatically applied
-- ✅ **HTTP redirects** by default
-- ✅ **Mixed protocols** - route HTTPS domains to HTTP backends
-- ✅ **IP addresses or hostnames** supported in targets
-- ✅ **Custom paths** supported (e.g., `http://host:3000/grafana`)
-
-### Examples
-
-#### Basic Static Route
-```yaml
-- domain: router.isnadboy.com
-  target: http://192.168.1.1
-  description: "Home Router Interface"
-# Gets HTTPS + redirect automatically
+  - domain: proxmox.example.com
+    target: https://192.168.1.100:8006
+    description: "Proxmox VE"
 ```
 
-#### HTTP-only Internal Service
+## HTTPS Configuration
+
+### Wildcard Certificate
+
+Create `traefik-dynamic/wildcard-cert.yml`:
 ```yaml
-- domain: prometheus.isnadboy.com
-  target: http://192.168.1.50:9090
-  description: "Prometheus Metrics"
-  https: false  # No HTTPS, HTTP only
+tls:
+  certificates:
+    - certFile: /letsencrypt/wildcard-cert.pem
+      keyFile: /letsencrypt/wildcard-key.pem
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /letsencrypt/wildcard-cert.pem
+        keyFile: /letsencrypt/wildcard-key.pem
 ```
 
-#### HTTPS Backend with Custom Path
-```yaml
-- domain: grafana.isnadboy.com
-  target: https://192.168.1.50:3000/grafana
-  description: "Grafana Dashboard"
+### Cloudflare DNS Challenge
+
+In `.env`:
+```bash
+CF_API_TOKEN=your_cloudflare_api_token_here
+DOMAIN=example.com
 ```
 
-Static routes are processed alongside container routes and appear in the same configuration output.
+Certificates auto-renew 30 days before expiration.
 
 ## API Endpoints
 
-### Core Endpoints
 - `GET /health` - Health check
-- `GET /api/traefik/config` - Get Traefik configuration with enhanced metadata
-- `GET /api/containers` - List discovered containers with exclusion info and diagnostics
-
-### Diagnostic Endpoints
-- `GET /api/diagnostics/environment` - Comprehensive environment diagnostics (container, DNS, network, Tailscale, SSH, cache, events)
-- `GET /api/status` - Comprehensive system status including SSH host health
-- `GET /api/hosts` - SSH host connection statuses
-- `GET /api/debug` - Detailed debugging information (label parsing, static routes, SSH diagnostics)
-
-### Cache Management
-- `GET /api/cache/info` - Cache status and statistics
+- `GET /api/traefik/config` - Current Traefik configuration
+- `GET /api/status` - Provider status and diagnostics
+- `GET /api/containers` - All discovered containers
+- `GET /api/ssh/status` - SSH host health status
 - `POST /api/cache/refresh` - Force cache refresh
-- `GET /api/events/stats` - Event listener statistics
+- `GET /docs` - Interactive API documentation
+- `GET /metrics` - Prometheus metrics
 
-### Documentation
-- `GET /docs` - Interactive Swagger UI documentation
-- `GET /redoc` - Alternative ReDoc documentation
-- `GET /openapi.json` - OpenAPI specification
+## Configuration Files
 
-### API Response Features
+- `config/ssh-hosts.yaml` - Docker host definitions
+- `config/static-routes.yaml` - Static route definitions
+- `traefik-dynamic/wildcard-cert.yml` - TLS certificate configuration
+- `.env` - Environment variables (Cloudflare API token, domain)
 
-#### Enhanced Configuration Metadata
-The `/api/traefik/config` endpoint now returns enhanced metadata including:
-- Processing time in milliseconds
-- Successful vs failed SSH hosts
-- Number of excluded containers
-- Static route count
-- Diagnostic information
+## Architecture
 
-#### Container Exclusion Tracking
-The `/api/containers` endpoint provides detailed information about:
-- **Included containers**: Successfully configured containers with valid `snadboy.revp` labels
-- **Excluded containers**: Containers excluded from routing with reasons:
-  - `No snadboy.revp labels` - Container has no routing labels
-  - `Invalid label configuration` - Container has labels but configuration is invalid
-  - `Label processing error` - Exception occurred while processing labels
-  - `Label extraction error` - Error extracting labels from container
+### Event-Driven Updates
 
-#### SSH Host Health Monitoring
-Monitor the health of all configured SSH hosts:
-- Connection status (connected, unreachable, error)
-- Last successful connection timestamp
-- Connection time in milliseconds
-- Docker version information
-- Container counts (total and running) - accurately detects containers with status "Up"
+1. Provider starts and generates initial config
+2. Subscribes to Docker events on all enabled hosts
+3. On container start/stop/restart:
+   - Debounces events (2s window)
+   - Refreshes cache
+   - Traefik polls and gets updated config
 
-#### Debug Information
-Comprehensive debugging data including:
-- **Label Parsing**: Containers with snadboy labels, valid configurations, parsing errors
-- **Static Routes**: Loaded routes and configuration errors
-- **SSH Diagnostics**: Tailscale connection status, authentication errors, host availability
+### Networking
 
-### Example API Usage
-
-```bash
-# Check system health and SSH host status
-curl http://localhost:8081/api/status
-
-# List all containers with exclusion information
-curl http://localhost:8081/api/containers
-
-# Get SSH host connection statuses
-curl http://localhost:8081/api/hosts
-
-# Get detailed debugging information
-curl http://localhost:8081/api/debug
-
-# Get Traefik configuration with enhanced metadata
-curl http://localhost:8081/api/traefik/config
-```
+- **Bridge Mode**: Proper container isolation with explicit port mappings
+- **Tailscale MagicDNS**: Uses `100.100.100.100` for hostname resolution
+- **SSH Access**: Containers use `-H ssh://user@host` for remote Docker access
 
 ## Development
-
-### Project Structure
-
-```
-traekik/
-├── app/
-│   ├── api/           # FastAPI routes
-│   ├── core/          # Core provider logic
-│   ├── models.py      # Pydantic models
-│   └── main.py        # FastAPI application
-├── config/            # Configuration files
-├── docker/            # Docker files
-└── compose.yml        # Docker Compose setup
-```
-
-### Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
 
 ### Run Locally
 
 ```bash
-python app/main.py
+# Install dependencies
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Configure
+cp config/ssh-hosts.example.yaml config/ssh-hosts.yaml
+
+# Run
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
-Or with uvicorn:
+### VSCode Debugging
 
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
+1. Set breakpoints in code
+2. Run container: `docker compose -f compose.development.yml up`
+3. Attach: **Run** → **Attach to Docker Container** → Select `sb-traefik-http-provider`
+4. Trigger endpoint: Container pauses at breakpoint
+
+### Project Structure
+
 ```
-
-### Debug with VSCode
-
-#### Quick Start
-
-1. **Start container in debug mode:**
-   ```bash
-   docker-compose run --rm --service-ports sb-traefik-http-provider debug
-   ```
-
-2. **In VSCode:**
-   - Open this project folder
-   - Go to Run and Debug (Ctrl+Shift+D)
-   - Select "Python: Remote Attach (Docker)"
-   - Click Start Debugging (F5)
-
-3. **Set breakpoints** in your Python code and test!
-
-#### How It Works
-
-- **Debug Port:** 5678 (exposed from container)
-- **Source Mapping:** Local files are mounted to `/app` in container
-- **Live Editing:** Changes to source files are immediately reflected
-- **Debugpy:** Python debug server waits for VSCode to attach
-
-#### Available Container Modes
-
-- `debug` - Start with debugpy server waiting for VSCode
-- `dev` - Direct Python execution with debug logging
-- `shell` - Open bash shell for inspection
-- Default - Production mode with Uvicorn
-
-#### Tips
-
-- Container will wait for debugger to attach before starting
-- You can edit code while debugging (live reload)
-- Use `docker-compose logs sb-traefik-http-provider` to see container output
-- Set breakpoints in key functions like `generate_config` for inspection
+app/
+├── main.py              # FastAPI application
+├── core/
+│   └── provider.py      # Traefik configuration generator
+├── api/
+│   └── routes.py        # API endpoints
+└── models.py            # Pydantic models
+config/
+├── ssh-hosts.yaml       # Host definitions
+└── static-routes.yaml   # Static routes
+docker/
+├── Dockerfile           # Production image
+└── docker-entrypoint.sh # Startup script
+```
 
 ## Logging
 
-The provider includes comprehensive logging with console and file output, structured logging support, and automatic log rotation.
-
-### Log Files
-
-When using Docker Compose, logs are stored in `./logs/`:
-
-- **app.log** - Main application log with all messages
-- **error.log** - Error messages only (ERROR level and above)
-- **access.log** - HTTP request/response logs
-- **audit.log** - Security and configuration change audit trail
-
-### Configuration
-
-#### Environment Variables
-```bash
-LOG_LEVEL=INFO          # Log level: DEBUG, INFO, WARNING, ERROR
-LOG_DIR=/var/log/traefik-provider  # Log directory
-LOG_JSON=false          # Enable JSON structured logging
-```
-
-#### Docker Compose
-```yaml
-environment:
-  - LOG_LEVEL=DEBUG     # More verbose logging
-  - LOG_JSON=true       # JSON format for log aggregation
-```
-
 ### Log Levels
 
-- **DEBUG**: Container discovery details, label parsing, configuration steps
-- **INFO**: Successful operations, configuration statistics, request handling
-- **WARNING**: Missing files, failed requests, deprecated features
-- **ERROR**: Connection failures, invalid configurations, exceptions
+```bash
+# Environment variable
+LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
 
-### Viewing Logs
+# Docker Compose
+environment:
+  - LOG_LEVEL=DEBUG
+```
+
+### View Logs
 
 ```bash
-# Real-time console output
-docker-compose logs -f traefik-provider
+# Container logs
+docker compose logs -f sb-traefik-http-provider
 
-# File logs
-tail -f logs/app.log
-tail -f logs/error.log
+# File logs (persistent)
+tail -f logs/sb-traefik-provider.log
 
-# Filter by level
-grep "ERROR" logs/app.log
-
-# JSON logs with jq
-cat logs/app.log | jq '.'
+# Specific log file
+tail -f logs/sb-traefik-provider-YYYY-MM-DD.log
 ```
-
-### Log Rotation
-
-Logs are automatically rotated:
-- **app.log**: Daily, keep 14 days
-- **access.log**: Hourly, keep 48 hours
-- **error.log**: Daily, keep 30 days
-- **audit.log**: Weekly, keep 1 year
-
-### Structured Logging (JSON)
-
-Enable with `LOG_JSON=true` for log aggregation systems:
-
-```json
-{
-  "timestamp": "2025-01-15T10:30:45.123456",
-  "level": "INFO",
-  "logger": "traefik-provider",
-  "message": "Configuration generated",
-  "container_count": 15,
-  "duration_seconds": 2.34
-}
-```
-
-## Architecture
-
-```
-┌─────────────────┐  Tailscale SSH  ┌──────────────┐
-│                 ├─────────────────►│ Docker Host1 │
-│ FastAPI Provider│                  └──────────────┘
-│   (Bridge Net)  │  Tailscale SSH  ┌──────────────┐
-│  DNS: 100.100.* ├─────────────────►│ Docker Host2 │
-└────────┬────────┘                  └──────────────┘
-         │
-         │ HTTP (Async)
-         │ /api/traefik/config
-         ▼
-   ┌──────────┐
-   │ Traefik  │
-   └──────────┘
-```
-
-### Networking Architecture
-
-- **Bridge Networking**: Provider runs in Docker bridge network for proper isolation
-- **MagicDNS (100.100.100.100)**: Automatic Tailscale hostname resolution
-- **Port Mapping**: Provider exposes port 8081 (host) → 8080 (container)
-- **SSH Host Keys**: Automatically pre-populated at startup using ssh-keyscan
-- **Container Communication**: Traefik reaches provider via container name on Docker network
-
-### Hostname Resolution
-
-The provider leverages Tailscale MagicDNS for seamless hostname resolution:
-- **MagicDNS Server**: Configured to use `100.100.100.100` for automatic Tailscale hostname resolution
-- **Short Hostnames**: Use simple names like `fabric`, `dev`, `prod` in configuration
-- **Automatic Resolution**: MagicDNS transparently resolves these to full Tailscale addresses
-- **SSH Host Keys**: Pre-populated on container startup via ssh-keyscan for immediate connectivity
-- **No Manual DNS Configuration**: Everything works automatically through Tailscale's infrastructure
-
-### Technology Stack
-
-- **FastAPI**: Modern async web framework with automatic API documentation
-- **Uvicorn**: Lightning-fast ASGI server
-- **Pydantic**: Data validation using Python type annotations
-- **snadboy-ssh-docker**: SSH-based Docker client for remote container management
-
-## Configuration Options
-
-### SSH Hosts Configuration (`config/ssh-hosts.yaml`)
-
-- `hostname`: Tailscale hostname or MagicDNS name
-- `user`: SSH username
-- `port`: SSH port (default 22)
-- `enabled`: Whether host is active
-- `description`: Human-readable description
 
 ## Troubleshooting
 
 ### Tailscale SSH Issues
 
-**Error: "Failed to connect to host"**
+**"Failed to connect to host"**
 ```bash
-# Verify Tailscale is running on the host
+# Verify Tailscale is running
 tailscale status
 
-# Ensure SSH is enabled
+# Enable SSH
 tailscale up --ssh
+
+# Test SSH connection
+ssh root@hostname.tail-scale.ts.net docker ps
 ```
 
-**Error: "Host not found"**
+**"Host not found"**
 ```bash
 # Check Tailscale hostname
-tailscale status | grep "host-name"
+tailscale status | grep hostname
 
-# Verify host is in your Tailnet
-tailscale status
-```
-
-**Error: "Authentication failed"**
-Ensure the user exists on the target host and has Docker permissions:
-```bash
-ssh user@host.tail-scale.ts.net docker ps
-```
-
-### Connection Issues
-
-1. Verify SSH connectivity:
-```bash
-ssh -i ~/.ssh/docker_key ubuntu@192.168.1.100
-```
-
-2. Check Docker permissions:
-```bash
-ssh user@host docker ps
+# Use MagicDNS name (without domain)
+# ✓ Correct: hostname
+# ✗ Wrong: hostname.tail-scale.ts.net
 ```
 
 ### Discovery Issues
 
-1. Check container labels:
-```bash
-docker inspect <container> | grep -A 10 Labels
-```
+**"No containers discovered"**
+- Check container has `snadboy.revp.PORT.domain` label
+- Verify host is enabled in `config/ssh-hosts.yaml`
+- Check container is running: `docker ps`
+- Review provider logs for errors
 
-2. View provider logs:
-```bash
-docker-compose logs traefik-provider
-```
+**"Service not routing"**
+- Verify domain resolves to Traefik host
+- Check Traefik dashboard: `http://traefik-host:8080`
+- Confirm service appears in API: `curl http://localhost:8081/api/traefik/config`
+- Check Traefik logs for errors
+
+## Technology Stack
+
+- **FastAPI** - Modern async web framework
+- **Uvicorn** - ASGI server
+- **Pydantic** - Data validation
+- **snadboy-ssh-docker** - SSH-based Docker client
+- **Traefik** - Reverse proxy and load balancer
+- **Tailscale** - Zero-config VPN and SSH
 
 ## License
 
@@ -764,4 +304,4 @@ MIT
 
 ## Contributing
 
-Pull requests welcome! Please ensure all tests pass and add tests for new features.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
