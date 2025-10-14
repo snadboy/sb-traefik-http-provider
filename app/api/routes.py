@@ -108,9 +108,9 @@ async def get_traefik_config(
         TraefikConfigResponse: Complete Traefik configuration
     """
     provider = get_provider()
-    target_host = host or provider.config.get('default_host', 'unknown')
+    target_host = host or 'all'
 
-    logger.info(f"Configuration request received for host: {host or 'default'} -> using: {target_host}")
+    logger.info(f"Configuration request received for host: {host or 'all hosts'}")
     logger.debug("About to call provider.generate_config")
     audit_logger.info(f"Config API called - host: {host}")
 
@@ -348,19 +348,16 @@ async def get_system_status() -> SystemStatusResponse:
 
         # Get provider configuration
         enabled_hosts = provider._get_enabled_hosts()
-        static_routes_config = provider.config.get('enable_static_routes', False)
-        static_routes_count = 0
-        if static_routes_config:
-            static_routes = provider._load_static_routes()
-            static_routes_count = len(static_routes)
+        static_routes = provider._load_static_routes()
+        static_routes_count = len(static_routes)
 
         from app.models import ProviderConfiguration, SSHHostStatus
         configuration = ProviderConfiguration(
             enabled_hosts=enabled_hosts,
-            label_prefix=provider.config.get('label_prefix', 'snadboy.revp'),
-            static_routes_enabled=static_routes_config,
+            label_prefix='snadboy.revp',
+            static_routes_enabled=True,
             static_routes_count=static_routes_count,
-            default_host=provider.config.get('default_host')
+            default_host=None
         )
 
         # Convert SSH host data to SSHHostStatus models
