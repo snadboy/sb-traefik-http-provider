@@ -25,8 +25,7 @@ services:
       - HEALTHCHECKS_ENABLED=false  # Set to true to enable Healthchecks.io monitoring
       # - HEALTHCHECKS_PING_URL=https://hc-ping.com/your-uuid-here
     labels:
-      - "snadboy.revp.8080.domain=sb-traefik-provider-api.isnadboy.com"
-      - "snadboy.revp.9090.domain=sb-traefik-provider-metrics.isnadboy.com"
+      - "snadboy.revp.8080.domain=sb-traefik-http-provider-api.isnadboy.com"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -58,7 +57,7 @@ services:
       - "--api.insecure=true"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      - "--providers.http.endpoint=http://sb-traefik-http-provider:8080/api/traefik/config"
+      - "--providers.http.endpoint=http://sb-traefik-http-provider-api:8080/api/traefik/config"
       - "--providers.http.pollInterval=30s"
       - "--providers.docker=false"  # Disable Docker provider since we use HTTP provider
       - "--providers.file.directory=/etc/traefik/dynamic"
@@ -86,8 +85,10 @@ services:
       - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}  # IMPORTANT: Set in .env file or environment
     env_file:
       - .env  # Contains CF_DNS_API_TOKEN
+    labels:
+      - "snadboy.revp.8080.domain=traefik.isnadboy.com"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # Optional: for local container discovery
+      # - /var/run/docker.sock:/var/run/docker.sock:ro  #   Not needed unless using Docker provider
       - type: volume
         source: nas-data
         target: /etc/traefik/dynamic

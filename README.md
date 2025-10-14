@@ -119,22 +119,7 @@ hosts:
 
 **Note**: Use short Tailscale hostnames (e.g., `dev`, `prod`) rather than full domain names. MagicDNS will automatically resolve these through the configured DNS server (100.100.100.100).
 
-### 2. Configure Provider
-
-Copy the example and customize:
-```bash
-cp config/provider-config.example.yaml config/provider-config.yaml
-```
-
-Edit `config/provider-config.yaml` to customize provider behavior:
-
-```yaml
-default_host: dev
-label_prefix: snadboy.revp
-refresh_interval: 30
-```
-
-### 3. Run with Docker Compose
+### 2. Run with Docker Compose
 
 ```bash
 docker-compose up -d
@@ -145,7 +130,7 @@ This will start:
 - Traefik on ports 80/443
 - Example containers (whoami, test-revp-app)
 
-### 4. Access Services
+### 3. Access Services
 
 - Provider API: http://localhost:8081/api/traefik/config
 - API Documentation: http://localhost:8081/docs
@@ -390,14 +375,9 @@ For services outside of Docker containers (e.g., network devices, VMs), you can 
 
 ### Configuration
 
-1. **Enable static routes** in `config/provider-config.yaml`:
-   ```yaml
-   static_routes_file: config/static-routes.yaml
-   enable_static_routes: true
-   ```
+Define routes in `config/static-routes.yaml`:
 
-2. **Define routes** in `config/static-routes.yaml`:
-   ```yaml
+```yaml
    static_routes:
      - domain: unifi-gateway.isnadboy.com
        target: https://192.168.86.78:8006
@@ -717,17 +697,6 @@ The provider leverages Tailscale MagicDNS for seamless hostname resolution:
 - **snadboy-ssh-docker**: SSH-based Docker client for remote container management
 
 ## Configuration Options
-
-### Provider Configuration (`config/provider-config.yaml`)
-
-- `ssh_hosts_file`: Path to SSH hosts configuration
-- `default_host`: Default host to query (e.g., 'dev')
-- `label_prefix`: Label prefix (snadboy.revp)
-- `refresh_interval`: How often Traefik polls for updates
-- `enable_tls`: Enable TLS support
-- `discovery`: Container discovery filters
-- `service_defaults`: Default service configuration
-- `advanced`: Debug and performance settings
 
 ### SSH Hosts Configuration (`config/ssh-hosts.yaml`)
 

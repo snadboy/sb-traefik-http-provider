@@ -61,7 +61,6 @@ We're always looking for ways to improve! Please open an issue with:
 2. Set up configuration:
    ```bash
    cp config/ssh-hosts.example.yaml config/ssh-hosts.yaml
-   cp config/provider-config.example.yaml config/provider-config.yaml
    cp .env.example .env
    # Edit files with your settings
    ```

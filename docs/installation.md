@@ -36,7 +36,6 @@ mkdir -p config ssh-keys traefik-dynamic logs
 
 # Copy example configurations
 cp ../config/ssh-hosts.example.yaml config/ssh-hosts.yaml
-cp ../config/provider-config.example.yaml config/provider-config.yaml
 cp ../config/static-routes.example.yaml config/static-routes.yaml
 cp ../traefik-dynamic/wildcard-cert.yml.example traefik-dynamic/wildcard-cert.yml
 cp ../.env.example .env
@@ -211,7 +210,6 @@ pip install -r requirements.txt
 
 # Copy configurations
 cp config/ssh-hosts.example.yaml config/ssh-hosts.yaml
-cp config/provider-config.example.yaml config/provider-config.yaml
 cp .env.example .env
 
 # Edit configurations for your setup

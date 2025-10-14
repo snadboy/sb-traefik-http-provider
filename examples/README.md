@@ -14,7 +14,6 @@ mkdir -p config ssh-keys traefik-dynamic logs
 
 # Copy example configurations
 cp ../config/ssh-hosts.example.yaml config/ssh-hosts.yaml
-cp ../config/provider-config.example.yaml config/provider-config.yaml
 cp ../config/static-routes.example.yaml config/static-routes.yaml
 
 # Copy Traefik dynamic config examples
@@ -99,7 +98,6 @@ docker-compose logs -f sb-traefik-http-provider
 
 - **`docker-compose.yml`** - Main deployment file
 - **`config/ssh-hosts.yaml`** - Define your Docker hosts
-- **`config/provider-config.yaml`** - Provider behavior settings
 - **`config/static-routes.yaml`** - Routes for non-Docker services
 - **`traefik-dynamic/wildcard-cert.yml`** - Wildcard certificate configuration
 - **`.env`** - Environment variables (Cloudflare API token)

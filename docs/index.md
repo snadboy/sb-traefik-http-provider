@@ -22,7 +22,6 @@ cd sb-traefik-http-provider
 
 # Copy configuration examples
 cp config/ssh-hosts.example.yaml config/ssh-hosts.yaml
-cp config/provider-config.example.yaml config/provider-config.yaml
 cp .env.example .env
 
 # Edit configurations with your settings

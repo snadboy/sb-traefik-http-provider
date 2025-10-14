@@ -86,8 +86,10 @@ services:
       - sb-traefik-http-provider
     env_file:
       - .env  # Contains CF_DNS_API_TOKEN
+    labels:
+      - "snadboy.revp.8080.domain=traefik.isnadboy.com"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # - /var/run/docker.sock:/var/run/docker.sock:ro - # Not needed unless using Docker provider
       - ./traefik-dynamic:/etc/traefik/dynamic:ro
       - ./letsencrypt:/letsencrypt  # Let's Encrypt certificate storage
     healthcheck:

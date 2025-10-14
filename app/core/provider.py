@@ -63,9 +63,7 @@ class SSHDockerClientDebugWrapper:
 class TraefikProvider:
     """Manages Docker discovery and Traefik configuration generation"""
 
-    def __init__(self, config_file: str = "config/provider-config.yaml"):
-        self.config_file = config_file
-        self.config = self._load_config()
+    def __init__(self):
         self.ssh_client = None
         self._initialize_client()
 
@@ -90,33 +88,11 @@ class TraefikProvider:
         self._pending_refresh: Optional[asyncio.Task] = None
         self._refresh_debounce_seconds = 2.0  # Wait 2 seconds after last event before refreshing
 
-    def _load_config(self) -> Dict[str, Any]:
-        """Load provider configuration"""
-        if not os.path.exists(self.config_file):
-            logger.warning(f"Config file {self.config_file} not found, using defaults")
-            return self._default_config()
-
-        with open(self.config_file, 'r') as f:
-            config = yaml.safe_load(f)
-            logger.info(f"Loaded configuration from {self.config_file}")
-            return config
-
-    def _default_config(self) -> Dict[str, Any]:
-        """Return default configuration"""
-        return {
-            'ssh_hosts_file': 'config/ssh-hosts.yaml',
-            'default_host': None,
-            'enable_tls': False,
-            'default_rule_type': 'Host',
-            'network_mode': 'bridge',
-            'refresh_interval': 30
-        }
 
     def _initialize_client(self):
         """Initialize SSH Docker client with Tailscale authentication"""
         try:
-            ssh_hosts_file = self.config.get('ssh_hosts_file', 'config/ssh-hosts.yaml')
-            ssh_hosts_path = Path(ssh_hosts_file).resolve()
+            ssh_hosts_path = Path('config/ssh-hosts.yaml').resolve()
 
             if not ssh_hosts_path.exists():
                 error_msg = f"SSH hosts configuration file not found: {ssh_hosts_path}"
@@ -133,7 +109,7 @@ class TraefikProvider:
 
             hosts = hosts_config.get('hosts', {})
             logger.info(f"Found {len(hosts)} host(s) in configuration:")
-            for host_name, host_config in hosts.items():
+            for idx, (host_name, host_config) in enumerate(hosts.items(), 1):
                 enabled = host_config.get('enabled', defaults.get('enabled', True))
                 is_local = host_config.get('is_local', False)
                 hostname = host_config.get('hostname', host_name)
@@ -141,9 +117,9 @@ class TraefikProvider:
                 port = host_config.get('port', defaults.get('port', 22))
                 description = host_config.get('description', '')
 
-                logger.info(f"  - {host_name}: enabled={enabled}, is_local={is_local}, hostname={hostname}, user={user}, port={port}")
+                logger.info(f"  [{idx}] {host_name}: enabled={enabled}, is_local={is_local}, hostname={hostname}, user={user}, port={port}")
                 if description:
-                    logger.info(f"    Description: {description}")
+                    logger.info(f"      Description: {description}")
 
             # Create the base client
             base_client = SSHDockerClient(config_file=ssh_hosts_path)
@@ -180,7 +156,7 @@ class TraefikProvider:
     def _get_ssh_hostname(self, alias: str) -> str:
         """Get the actual hostname for an SSH alias from config"""
         try:
-            ssh_hosts_file = self.config.get('ssh_hosts_file', 'config/ssh-hosts.yaml')
+            ssh_hosts_file = 'config/ssh-hosts.yaml'
             if os.path.exists(ssh_hosts_file):
                 with open(ssh_hosts_file, 'r') as f:
                     ssh_config = yaml.safe_load(f)
@@ -194,11 +170,9 @@ class TraefikProvider:
         # Fall back to alias if we can't resolve
         return alias
 
-    async def discover_containers(self, host: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def discover_containers(self, host: str) -> List[Dict[str, Any]]:
         """Discover running containers on specified host"""
-        target_host = host or self.config.get('default_host')
-        if not target_host:
-            raise ValueError("No host specified and no default_host in config")
+        target_host = host
 
         try:
             logger.debug(f"Starting container discovery on host: {target_host}")
@@ -242,13 +216,7 @@ class TraefikProvider:
     def _load_static_routes(self) -> List[Dict[str, Any]]:
         """Load static routes from configuration file"""
         static_routes = []
-
-        # Check if static routes are enabled
-        if not self.config.get('enable_static_routes', False):
-            logger.info("Static routes disabled in configuration")
-            return static_routes
-
-        static_routes_file = self.config.get('static_routes_file', 'config/static-routes.yaml')
+        static_routes_file = 'config/static-routes.yaml'
         logger.info(f"Loading static routes from: {static_routes_file}")
 
         if not os.path.exists(static_routes_file):
@@ -653,7 +621,14 @@ class TraefikProvider:
             'static_routes': len(static_routes)
         }
 
-        logger.info(f"Configuration built: {stats['routers']} routers, {stats['services']} services, {stats['middlewares']} middlewares, {stats['static_routes']} static routes")
+        logger.info(f"Configuration built: {stats['routers']} routers, {stats['services']} services, {stats['middlewares']} middlewares")
+
+        # Log services with their URLs
+        if config['http']['services']:
+            logger.info(f"Found {len(config['http']['services'])} service(s):")
+            for idx, (service_name, service_config) in enumerate(config['http']['services'].items(), 1):
+                url = service_config.get('loadBalancer', {}).get('servers', [{}])[0].get('url', 'unknown')
+                logger.info(f"  [{idx}] {service_name} -> {url}")
 
         return config
 
@@ -684,8 +659,7 @@ class TraefikProvider:
             logger.info(f"Generating config for specific host: {host}")
         else:
             # Query all enabled hosts
-            all_hosts = self._get_enabled_hosts()
-            target_hosts = all_hosts if all_hosts else [self.config.get('default_host')]
+            target_hosts = self._get_enabled_hosts()
             logger.info(f"Generating config for all enabled hosts: {target_hosts}")
 
         containers_data = []
@@ -724,10 +698,8 @@ class TraefikProvider:
                 hosts_failed.append(host)
 
         # Count static routes
-        static_routes_count = 0
-        if self.config.get('enable_static_routes', False):
-            static_routes = self._load_static_routes()
-            static_routes_count = len(static_routes)
+        static_routes = self._load_static_routes()
+        static_routes_count = len(static_routes)
 
         config['_metadata'] = {
             'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -763,7 +735,7 @@ class TraefikProvider:
 
         try:
             # Get host configuration
-            ssh_hosts_file = self.config.get('ssh_hosts_file', 'config/ssh-hosts.yaml')
+            ssh_hosts_file = 'config/ssh-hosts.yaml'
             if os.path.exists(ssh_hosts_file):
                 with open(ssh_hosts_file, 'r') as f:
                     ssh_config = yaml.safe_load(f)
@@ -982,10 +954,7 @@ class TraefikProvider:
         errors = []
 
         try:
-            if not self.config.get('enable_static_routes', False):
-                return {'loaded': 0, 'errors': ['Static routes disabled']}
-
-            static_routes_file = self.config.get('static_routes_file', 'config/static-routes.yaml')
+            static_routes_file = 'config/static-routes.yaml'
             if not os.path.exists(static_routes_file):
                 errors.append(f"Static routes file not found: {static_routes_file}")
                 return {'loaded': 0, 'errors': errors}
