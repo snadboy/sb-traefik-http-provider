@@ -119,13 +119,16 @@ async def get_traefik_config(
         config = await provider.generate_config(host)
 
         # Log generated configuration
-        services_list = list(config['http']['services'].keys())
+        services_dict = config['http']['services']
+        service_count = len(services_dict)
         logger.debug(f"Generated routers: {list(config['http']['routers'].keys())}")
-        logger.debug(f"Generated services: {services_list}")
 
-        service_count = len(services_list)
-        services_str = ', '.join(services_list)
-        logger.info(f"Successfully generated config with {service_count} services for host: {target_host} [{services_str}]")
+        # Log services with URLs in numbered list format
+        logger.info(f"API request: Found {service_count} service(s) for host: {target_host}")
+        for idx, (service_name, service_config) in enumerate(services_dict.items(), 1):
+            url = service_config.get('loadBalancer', {}).get('servers', [{}])[0].get('url', 'unknown')
+            logger.info(f"  [{idx}] {service_name} -> {url}")
+
         audit_logger.info(f"Config generated successfully - {service_count} services")
 
         return EnhancedTraefikConfigResponse(**config)
