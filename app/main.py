@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize provider on startup
     provider = get_provider()
-    logger.info(f"Provider initialized with config: {provider.config_file}")
+    logger.info("Provider initialized successfully")
 
     # Do initial config generation to populate cache
     logger.info("Performing initial configuration generation...")
