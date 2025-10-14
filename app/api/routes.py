@@ -120,14 +120,30 @@ async def get_traefik_config(
 
         # Log generated configuration
         services_dict = config['http']['services']
+        routers_dict = config['http']['routers']
         service_count = len(services_dict)
-        logger.debug(f"Generated routers: {list(config['http']['routers'].keys())}")
+        logger.debug(f"Generated routers: {list(routers_dict.keys())}")
 
-        # Log services with URLs in numbered list format
+        # Build a map of service -> domain from routers
+        service_to_domain = {}
+        for router_name, router_config in routers_dict.items():
+            service_name = router_config.get('service')
+            rule = router_config.get('rule', '')
+            # Extract domain from rule like "Host(`example.com`)"
+            if service_name and 'Host(' in rule:
+                domain = rule.split('Host(`')[1].split('`)')[0] if '`)' in rule else 'unknown'
+                # Prefer HTTPS router for display
+                if 'https' in router_name or service_name not in service_to_domain:
+                    entrypoints = router_config.get('entryPoints', [])
+                    protocol = 'https' if 'websecure' in entrypoints else 'http'
+                    service_to_domain[service_name] = f"{protocol}://{domain}"
+
+        # Log services with URLs and domains in numbered list format
         logger.info(f"API request: Found {service_count} service(s) for host: {target_host}")
         for idx, (service_name, service_config) in enumerate(services_dict.items(), 1):
-            url = service_config.get('loadBalancer', {}).get('servers', [{}])[0].get('url', 'unknown')
-            logger.info(f"  [{idx}] {service_name} -> {url}")
+            backend_url = service_config.get('loadBalancer', {}).get('servers', [{}])[0].get('url', 'unknown')
+            domain = service_to_domain.get(service_name, 'no domain')
+            logger.info(f"  [{idx}] {service_name}: {domain} -> {backend_url}")
 
         audit_logger.info(f"Config generated successfully - {service_count} services")
 
