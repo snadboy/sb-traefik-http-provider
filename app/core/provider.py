@@ -88,6 +88,10 @@ class TraefikProvider:
         self._pending_refresh: Optional[asyncio.Task] = None
         self._refresh_debounce_seconds = 2.0  # Wait 2 seconds after last event before refreshing
 
+        # Event history for dashboard
+        self._event_history: List[Dict[str, Any]] = []
+        self._max_event_history = 200  # Keep last 200 events
+
 
     def _initialize_client(self):
         """Initialize SSH Docker client with Tailscale authentication"""
@@ -325,11 +329,15 @@ class TraefikProvider:
             redirect_https = config.get('redirect-https', 'true').lower() == 'true'
             cert_resolver = config.get('https-certresolver', 'letsencrypt')
 
+            # Support comma-separated domains for multiple domains per port
+            # e.g., "app.example.com,app2.example.com" -> ["app.example.com", "app2.example.com"]
+            domains = [d.strip() for d in domain.split(',') if d.strip()]
+
             service_name = f"{container_name}-{internal_port}"
             service_url = f"{backend_proto}://{resolved_hostname}:{external_port}{backend_path}"
 
             revp_config['services'][service_name] = {
-                'domain': domain,
+                'domains': domains,  # Changed to plural and list
                 'service_url': service_url,
                 'internal_port': internal_port,
                 'external_port': external_port,
@@ -435,10 +443,15 @@ class TraefikProvider:
                     logger.debug(f"  Creating service '{service_name}' -> {service_config['service_url']}")
                     logger.debug(f"    HTTPS: {service_config['https_enabled']}, Redirect: {service_config['redirect_https']}")
 
-                    domain = service_config['domain']
+                    domains = service_config['domains']
                     https_enabled = service_config['https_enabled']
                     redirect_https = service_config['redirect_https']
                     # cert_resolver not needed - using wildcard certificate
+
+                    # Build Traefik Host rule with OR for multiple domains
+                    # e.g., "Host(`app.com`) || Host(`app2.com`)"
+                    host_rules = ' || '.join([f"Host(`{d}`)" for d in domains])
+                    logger.debug(f"    Domains: {', '.join(domains)} -> Rule: {host_rules}")
 
                     # Create service (shared by all routers)
                     config['http']['services'][service_name] = {
@@ -455,7 +468,7 @@ class TraefikProvider:
                         # Create HTTPS router
                         https_router_name = f"{service_name}-https-router"
                         config['http']['routers'][https_router_name] = {
-                            'rule': f"Host(`{domain}`)",
+                            'rule': host_rules,
                             'service': service_name,
                             'entryPoints': ['websecure'],
                             'tls': {}  # Uses wildcard certificate from dynamic config
@@ -473,7 +486,7 @@ class TraefikProvider:
                         }
 
                         config['http']['routers'][http_router_name] = {
-                            'rule': f"Host(`{domain}`)",
+                            'rule': host_rules,
                             'service': service_name,
                             'entryPoints': ['web'],
                             'middlewares': [redirect_middleware_name]
@@ -485,7 +498,7 @@ class TraefikProvider:
                         # HTTP router
                         http_router_name = f"{service_name}-http-router"
                         config['http']['routers'][http_router_name] = {
-                            'rule': f"Host(`{domain}`)",
+                            'rule': host_rules,
                             'service': service_name,
                             'entryPoints': ['web']
                         }
@@ -493,7 +506,7 @@ class TraefikProvider:
                         # HTTPS router
                         https_router_name = f"{service_name}-https-router"
                         config['http']['routers'][https_router_name] = {
-                            'rule': f"Host(`{domain}`)",
+                            'rule': host_rules,
                             'service': service_name,
                             'entryPoints': ['websecure'],
                             'tls': {}  # Uses wildcard certificate from dynamic config
@@ -503,7 +516,7 @@ class TraefikProvider:
                         # HTTP only
                         http_router_name = f"{service_name}-http-router"
                         config['http']['routers'][http_router_name] = {
-                            'rule': f"Host(`{domain}`)",
+                            'rule': host_rules,
                             'service': service_name,
                             'entryPoints': ['web']
                         }
@@ -1012,10 +1025,20 @@ class TraefikProvider:
 
         for host in enabled_hosts:
             if host not in self._event_listener_tasks:
-                task = asyncio.create_task(self._event_listener_loop(host))
+                task = asyncio.create_task(self._event_listener_loop_wrapper(host))
                 self._event_listener_tasks[host] = task
                 self._event_stats[host] = 0
                 logger.info(f"Started event listener for host: {host}")
+
+    async def _event_listener_loop_wrapper(self, host: str):
+        """Wrapper to catch and log exceptions from event listener loop"""
+        try:
+            await self._event_listener_loop(host)
+        except Exception as e:
+            logger.error(f"Event listener for {host} died with exception: {e}", exc_info=True)
+            # Remove from tracking so it can potentially be restarted
+            if host in self._event_listener_tasks:
+                del self._event_listener_tasks[host]
 
     async def stop_event_listeners(self):
         """Stop all Docker event listeners"""
@@ -1040,7 +1063,7 @@ class TraefikProvider:
 
         # Get host config
         host_config = self.ssh_client.hosts_config.get_host_config(host)
-        logger.debug(f"Event listener for {host}: is_local={host_config.is_local}, hostname={host_config.hostname}")
+        logger.debug(f"Event listener for {host}: is_local={host_config.is_local}, user={host_config.user}")
 
         while not self._shutdown_event.is_set():
             process = None
@@ -1064,7 +1087,8 @@ class TraefikProvider:
                     ]
                 else:
                     # Remote: docker -H ssh://user@host events
-                    docker_host = f"ssh://{host_config.user}@{host_config.hostname}"
+                    # The 'host' parameter is the SSH alias to use
+                    docker_host = f"ssh://{host_config.user}@{host}"
                     cmd = [
                         "docker", "-H", docker_host, "events",
                         "--filter", "type=container",
@@ -1084,6 +1108,7 @@ class TraefikProvider:
                 )
 
                 logger.info(f"Connected to Docker events stream on {host}")
+                self._add_ssh_event_to_history(host, 'connected', 'SSH event stream established')
 
                 # Read events from the process stdout
                 while not self._shutdown_event.is_set():
@@ -1103,10 +1128,21 @@ class TraefikProvider:
                             # Check if it's a permission error - use exponential backoff
                             if "Permission denied" in stderr_output:
                                 logger.warning(f"SSH permission denied for {host}, reconnecting in {retry_delay}s...")
+                                self._add_ssh_event_to_history(host, 'disconnected', f'Permission denied: {stderr_output[:100]}')
+                                await asyncio.sleep(retry_delay)
+                                retry_delay = min(retry_delay * 2, max_retry_delay)
+                            else:
+                                # Other error - use shorter retry delay
+                                logger.warning(f"Event stream error for {host}, reconnecting in {retry_delay}s...")
+                                self._add_ssh_event_to_history(host, 'disconnected', f'Error: {stderr_output[:100]}')
                                 await asyncio.sleep(retry_delay)
                                 retry_delay = min(retry_delay * 2, max_retry_delay)
                         else:
-                            logger.warning(f"Event stream ended for {host} (no data received)")
+                            # Clean disconnect (no stderr) - likely SSH timeout or network issue
+                            logger.warning(f"Event stream ended for {host} (clean disconnect), reconnecting in {retry_delay}s...")
+                            self._add_ssh_event_to_history(host, 'disconnected', 'Clean disconnect (timeout or network issue)')
+                            await asyncio.sleep(retry_delay)
+                            retry_delay = min(retry_delay * 2, max_retry_delay)
                         break
 
                     try:
@@ -1126,6 +1162,8 @@ class TraefikProvider:
                 break
             except Exception as e:
                 logger.error(f"Error in event listener for {host}: {e}", exc_info=True)
+                error_msg = str(e)[:100]
+                self._add_ssh_event_to_history(host, 'disconnected', f'Exception: {error_msg}')
                 try:
                     if process and process.stderr:
                         stderr = await process.stderr.read()
@@ -1186,6 +1224,10 @@ class TraefikProvider:
                     f"(routed by Traefik) [services: {services_str}] "
                     f"[time={event_time}, event_id={event_id}, actor_id={actor_id}]"
                 )
+
+                # Add to event history
+                self._add_event_to_history(host, action, container_name, event)
+
                 # Refresh cache in background (don't block event processing)
                 asyncio.create_task(self._refresh_cache_from_event(host, action, container_name))
             else:
@@ -1238,3 +1280,42 @@ class TraefikProvider:
             }
             for host, task in self._event_listener_tasks.items()
         }
+
+    def get_event_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get recent event history"""
+        return self._event_history[-limit:] if self._event_history else []
+
+    def _add_event_to_history(self, host: str, action: str, container_name: str, event_data: Dict[str, Any]):
+        """Add an event to history"""
+        event = {
+            'timestamp': event_data.get('time', int(time.time())),
+            'host': host,
+            'container': container_name,
+            'action': action,
+            'event_id': event_data.get('id', '')[:12],
+            'actor_id': event_data.get('Actor', {}).get('ID', '')[:12]
+        }
+
+        self._event_history.append(event)
+
+        # Trim history if it gets too long
+        if len(self._event_history) > self._max_event_history:
+            self._event_history = self._event_history[-self._max_event_history:]
+
+    def _add_ssh_event_to_history(self, host: str, action: str, details: str = None):
+        """Add an SSH connection event to history"""
+        event = {
+            'timestamp': int(time.time()),
+            'host': host,
+            'container': 'ssh',
+            'action': action,
+            'event_id': '',
+            'actor_id': '',
+            'details': details
+        }
+
+        self._event_history.append(event)
+
+        # Trim history if it gets too long
+        if len(self._event_history) > self._max_event_history:
+            self._event_history = self._event_history[-self._max_event_history:]

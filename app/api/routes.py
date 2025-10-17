@@ -910,3 +910,164 @@ async def _get_ssh_connectivity(provider: TraefikProvider) -> Dict[str, Dict[str
             }
 
     return connectivity
+
+
+# Dashboard API Endpoints
+
+@router.get("/api/services")
+async def get_services() -> Dict[str, Any]:
+    """Get formatted list of services for dashboard"""
+    try:
+        provider = get_provider()
+        config = await provider.generate_config()
+
+        services = []
+        http_services = config.get('http', {}).get('services', {})
+        http_routers = config.get('http', {}).get('routers', {})
+
+        # Build service information from routers and services
+        for router_name, router_config in http_routers.items():
+            service_name = router_config.get('service')
+            if not service_name or service_name in [s['name'] for s in services]:
+                continue
+
+            service_config = http_services.get(service_name, {})
+            servers = service_config.get('loadBalancer', {}).get('servers', [])
+            backend_url = servers[0].get('url') if servers else None
+
+            # Get domains from router rule (supports multiple domains with OR operator)
+            # e.g., "Host(`app.com`) || Host(`app2.com`)" -> ["app.com", "app2.com"]
+            rule = router_config.get('rule', '')
+            domains = []
+            if 'Host(' in rule:
+                import re
+                # Extract all Host(`domain`) patterns
+                domain_matches = re.findall(r'Host\(`([^`]+)`\)', rule)
+                domains = domain_matches if domain_matches else []
+
+            # Determine if HTTPS
+            entry_points = router_config.get('entryPoints', [])
+            is_https = 'websecure' in entry_points
+
+            # Extract host and container info from backend URL
+            host = None
+            container = None
+            is_static = service_name.startswith('static-')
+
+            if backend_url:
+                # Extract host from URL (e.g., http://fabric:3001/ -> fabric)
+                match = re.match(r'https?://([^:]+)', backend_url)
+                if match:
+                    host = match.group(1)
+                    if not is_static and host not in ['localhost', '127.0.0.1']:
+                        # Extract container name from service name (e.g., uptime-kuma-3001 -> uptime-kuma)
+                        container = service_name.rsplit('-', 1)[0] if '-' in service_name else service_name
+
+            # Build public URLs for all domains
+            public_urls = []
+            for domain in domains:
+                url = f"https://{domain}" if is_https else f"http://{domain}"
+                public_urls.append({'domain': domain, 'url': url})
+
+            services.append({
+                'name': service_name,
+                'domains': domains,  # All domains for this service
+                'public_urls': public_urls,  # All public URLs
+                'public_url': public_urls[0]['url'] if public_urls else None,  # Primary URL for compatibility
+                'backend_url': backend_url,
+                'host': host,
+                'container': container,
+                'is_static': is_static
+            })
+
+        return {
+            'services': sorted(services, key=lambda x: (x['is_static'], x['name'])),
+            'total': len(services)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get services: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/containers/grouped")
+async def get_containers_grouped() -> Dict[str, Any]:
+    """Get containers grouped by host for dashboard"""
+    try:
+        provider = get_provider()
+
+        # Get all enabled hosts
+        enabled_hosts = provider._get_enabled_hosts()
+
+        hosts_data = {}
+        for host in enabled_hosts:
+            try:
+                containers = await provider.discover_containers(host)
+
+                container_list = []
+                for container in containers:
+                    # Get container details
+                    raw_names = container.get('Names', [])
+                    if isinstance(raw_names, list):
+                        name = raw_names[0].strip('/') if raw_names else 'unknown'
+                    elif isinstance(raw_names, str):
+                        name = raw_names.strip('/')
+                    else:
+                        name = 'unknown'
+
+                    # Parse status
+                    status_str = container.get('Status', '')
+                    status = 'running' if 'Up' in status_str else 'stopped'
+
+                    # Get ports
+                    ports_str = container.get('Ports', '')
+
+                    container_list.append({
+                        'id': container.get('ID', '')[:12],
+                        'name': name,
+                        'image': container.get('Image', 'unknown'),
+                        'status': status,
+                        'ports': ports_str
+                    })
+
+                hosts_data[host] = {
+                    'containers': container_list,
+                    'count': len(container_list)
+                }
+
+            except Exception as e:
+                logger.error(f"Failed to get containers for {host}: {e}")
+                hosts_data[host] = {
+                    'containers': [],
+                    'count': 0,
+                    'error': str(e)
+                }
+
+        return {'hosts': hosts_data}
+
+    except Exception as e:
+        logger.error(f"Failed to get grouped containers: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/events")
+async def get_events(limit: int = Query(50, ge=1, le=200)) -> Dict[str, Any]:
+    """Get recent container events"""
+    try:
+        provider = get_provider()
+
+        # Get event history from provider
+        events = provider.get_event_history(limit=limit)
+
+        # Get event listener stats
+        event_stats = provider.get_event_listener_status()
+
+        return {
+            'events': list(reversed(events)),  # Most recent first
+            'total': len(events),
+            'listeners': event_stats
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get events: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

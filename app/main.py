@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from app.api.routes import router, get_provider
 from app.utils.logging_config import initialize_logging, get_logger
 from app.utils.ssh_setup import initialize_ssh_known_hosts
@@ -112,6 +113,14 @@ def create_app() -> FastAPI:
 
     # Include API routes
     app.include_router(router)
+
+    # Mount static files for dashboard
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    if os.path.exists(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir, html=True), name="static")
+        logger.info(f"Mounted static files from: {static_dir}")
+    else:
+        logger.warning(f"Static directory not found: {static_dir}")
 
     # Add custom exception handler for better error responses
     @app.exception_handler(Exception)
