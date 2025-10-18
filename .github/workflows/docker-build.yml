@@ -70,33 +70,36 @@ jobs:
       - name: Send success notification to Gotify
         if: success() && github.event_name != 'pull_request'
         continue-on-error: true
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          AUTHOR: ${{ github.event.head_commit.author.name }}
         run: |
           curl -X POST "${{ secrets.GOTIFY_URL }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "title": "✅ Docker Build Success",
-              "message": "**sb-traefik-http-provider** built and pushed successfully\n\n📦 Image: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest\n🔨 Commit: ${{ github.event.head_commit.message }}\n👤 Author: ${{ github.event.head_commit.author.name }}\n🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})",
-              "priority": 5,
-              "extras": {
-                "client::display": {
-                  "contentType": "text/markdown"
-                }
-              }
-            }'
+            -F "title=✅ Docker Build Success" \
+            -F "message=**sb-traefik-http-provider** built and pushed successfully
+
+          📦 Image: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+          🔨 Commit: ${COMMIT_MSG}
+          👤 Author: ${AUTHOR}
+          🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
+            -F "priority=5" \
+            -F "extras={\"client::display\":{\"contentType\":\"text/markdown\"}}"
 
       - name: Send failure notification to Gotify
         if: failure() && github.event_name != 'pull_request'
         continue-on-error: true
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          AUTHOR: ${{ github.event.head_commit.author.name }}
         run: |
           curl -X POST "${{ secrets.GOTIFY_URL }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "title": "❌ Docker Build Failed",
-              "message": "**sb-traefik-http-provider** build failed\n\n🔨 Commit: ${{ github.event.head_commit.message }}\n👤 Author: ${{ github.event.head_commit.author.name }}\n🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})",
-              "priority": 8,
-              "extras": {
-                "client::display": {
-                  "contentType": "text/markdown"
-                }
-              }
-            }'
+            -F "title=❌ Docker Build Failed" \
+            -F "message=**sb-traefik-http-provider** build failed
+
+          🔨 Commit: ${COMMIT_MSG}
+          👤 Author: ${AUTHOR}
+          🔗 [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
+            -F "priority=8" \
+            -F "extras={\"client::display\":{\"contentType\":\"text/markdown\"}}"
