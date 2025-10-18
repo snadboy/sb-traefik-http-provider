@@ -68,7 +68,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Send success notification to Gotify
-        if: success() && github.event_name != 'pull_request' && secrets.GOTIFY_URL != ''
+        if: success() && github.event_name != 'pull_request'
+        continue-on-error: true
         run: |
           curl -X POST "${{ secrets.GOTIFY_URL }}" \
             -H "Content-Type: application/json" \
@@ -84,7 +85,8 @@ jobs:
             }'
 
       - name: Send failure notification to Gotify
-        if: failure() && github.event_name != 'pull_request' && secrets.GOTIFY_URL != ''
+        if: failure() && github.event_name != 'pull_request'
+        continue-on-error: true
         run: |
           curl -X POST "${{ secrets.GOTIFY_URL }}" \
             -H "Content-Type: application/json" \
