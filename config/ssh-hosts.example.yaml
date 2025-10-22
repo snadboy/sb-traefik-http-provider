@@ -2,6 +2,13 @@
 # Copy to ssh-hosts.yaml and update with your Tailscale hosts
 # Note: Tailscale authentication is used - no SSH keys required!
 # Ensure Tailscale is installed and SSH is enabled: tailscale up --ssh
+#
+# Fields:
+#   is_local: true = local Docker daemon (no SSH), false = remote host via SSH
+#   tailscale_hostname: Tailscale hostname used for SSH connections (passwordless auth)
+#   backend_hostname: Hostname/IP used for Traefik backend service URLs (LAN traffic)
+#   user: SSH user (ignored when is_local=true)
+#   port: SSH port (ignored when is_local=true)
 
 defaults:
   user: docker
@@ -9,25 +16,37 @@ defaults:
   enabled: true
 
 hosts:
-  # Development environment (Tailscale hostname)
+  # Local Docker daemon (no SSH required)
+  localhost:
+    is_local: true
+    description: Local Docker daemon (no SSH)
+    enabled: true
+
+  # Development environment (remote via Tailscale SSH)
   dev:
-    hostname: host-dev.tail-scale.ts.net
+    is_local: false
+    tailscale_hostname: host-dev.tail-scale.ts.net
+    backend_hostname: 192.168.1.100  # LAN IP for service traffic
     user: docker
     port: 22
     description: Development Docker host
     enabled: true
 
-  # Production environment (Tailscale hostname)
+  # Production environment (remote via Tailscale SSH)
   prod:
-    hostname: host-prod.tail-scale.ts.net
+    is_local: false
+    tailscale_hostname: host-prod.tail-scale.ts.net
+    backend_hostname: 192.168.1.101  # LAN IP for service traffic
     user: docker
     port: 22
     description: Production Docker host
     enabled: true
 
-  # Staging environment (Tailscale hostname or MagicDNS)
+  # Staging environment (remote via Tailscale SSH)
   staging:
-    hostname: staging.tail-scale.ts.net
+    is_local: false
+    tailscale_hostname: staging.tail-scale.ts.net
+    backend_hostname: 192.168.1.102  # LAN IP for service traffic
     user: docker
     port: 22
     description: Staging Docker host

@@ -116,12 +116,18 @@ class TraefikProvider:
             for idx, (host_name, host_config) in enumerate(hosts.items(), 1):
                 enabled = host_config.get('enabled', defaults.get('enabled', True))
                 is_local = host_config.get('is_local', False)
-                hostname = host_config.get('hostname', host_name)
                 user = host_config.get('user', defaults.get('user', 'root'))
                 port = host_config.get('port', defaults.get('port', 22))
                 description = host_config.get('description', '')
 
-                logger.info(f"  [{idx}] {host_name}: enabled={enabled}, is_local={is_local}, hostname={hostname}, user={user}, port={port}")
+                if is_local:
+                    logger.info(f"  [{idx}] {host_name}: enabled={enabled}, is_local={is_local}")
+                else:
+                    tailscale_hostname = host_config.get('tailscale_hostname', host_name)
+                    backend_hostname = host_config.get('backend_hostname', host_name)
+                    logger.info(f"  [{idx}] {host_name}: enabled={enabled}, is_local={is_local}")
+                    logger.info(f"      SSH (Tailscale): {tailscale_hostname}, Backend: {backend_hostname}, user={user}, port={port}")
+
                 if description:
                     logger.info(f"      Description: {description}")
 
@@ -158,18 +164,49 @@ class TraefikProvider:
             return []
 
     def _get_ssh_hostname(self, alias: str) -> str:
-        """Get the actual hostname for an SSH alias from config"""
+        """Get the Tailscale hostname for SSH connections from config"""
         try:
             ssh_hosts_file = 'config/ssh-hosts.yaml'
             if os.path.exists(ssh_hosts_file):
                 with open(ssh_hosts_file, 'r') as f:
                     ssh_config = yaml.safe_load(f)
                     host_config = ssh_config.get('hosts', {}).get(alias, {})
-                    hostname = host_config.get('hostname', alias)
-                    logger.debug(f"Resolved SSH alias '{alias}' to hostname '{hostname}'")
+
+                    # For remote hosts, use tailscale_hostname
+                    # For local hosts, just use the alias
+                    if not host_config.get('is_local', False):
+                        hostname = host_config.get('tailscale_hostname', alias)
+                    else:
+                        hostname = alias
+
+                    logger.debug(f"Resolved SSH alias '{alias}' to Tailscale hostname '{hostname}'")
                     return hostname
         except Exception as e:
-            logger.warning(f"Failed to resolve hostname for alias '{alias}': {e}")
+            logger.warning(f"Failed to resolve Tailscale hostname for alias '{alias}': {e}")
+
+        # Fall back to alias if we can't resolve
+        return alias
+
+    def _get_backend_hostname(self, alias: str) -> str:
+        """Get the backend hostname/IP for Traefik service URLs from config"""
+        try:
+            ssh_hosts_file = 'config/ssh-hosts.yaml'
+            if os.path.exists(ssh_hosts_file):
+                with open(ssh_hosts_file, 'r') as f:
+                    ssh_config = yaml.safe_load(f)
+                    host_config = ssh_config.get('hosts', {}).get(alias, {})
+
+                    # For remote hosts, use backend_hostname
+                    # For local hosts, use alias (e.g., 'localhost' or Docker network name)
+                    if not host_config.get('is_local', False):
+                        hostname = host_config.get('backend_hostname', alias)
+                    else:
+                        hostname = alias
+
+                    logger.debug(f"Resolved backend alias '{alias}' to hostname '{hostname}'")
+                    return hostname
+        except Exception as e:
+            logger.warning(f"Failed to resolve backend hostname for alias '{alias}': {e}")
 
         # Fall back to alias if we can't resolve
         return alias
@@ -277,8 +314,9 @@ class TraefikProvider:
             'services': {}
         }
 
-        # Resolve the SSH alias to actual hostname for service URL
-        resolved_hostname = self._get_ssh_hostname(host)
+        # Resolve the host alias to backend hostname for service URL
+        # This is the hostname/IP that Traefik will use to forward traffic
+        resolved_hostname = self._get_backend_hostname(host)
 
         # Look for snadboy.revp.{PORT}.* labels
         revp_pattern = re.compile(r'^snadboy\.revp\.(\d+)\.(.+)$')
@@ -753,7 +791,11 @@ class TraefikProvider:
                 with open(ssh_hosts_file, 'r') as f:
                     ssh_config = yaml.safe_load(f)
                     host_config = ssh_config.get('hosts', {}).get(host, {})
-                    status['hostname'] = host_config.get('hostname', host)
+                    # Use Tailscale hostname for display (this is what SSH connects to)
+                    if not host_config.get('is_local', False):
+                        status['hostname'] = host_config.get('tailscale_hostname', host)
+                    else:
+                        status['hostname'] = host
 
             # Test connection and gather info
             # Get all containers first, then filter by status

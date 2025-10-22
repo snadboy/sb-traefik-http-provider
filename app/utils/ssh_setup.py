@@ -182,7 +182,8 @@ def get_enabled_hosts_from_config(config_path: str = "/app/config/ssh-hosts.yaml
                     logger.info(f"Skipping SSH keyscan for localhost: {host_name}")
                     continue
 
-                hostname = host_config.get('hostname', host_name)
+                # Use tailscale_hostname for SSH connections
+                hostname = host_config.get('tailscale_hostname', host_name)
                 enabled_hosts.append(hostname)
 
         logger.info(f"Found {len(enabled_hosts)} enabled hosts requiring SSH keyscan: {enabled_hosts}")
