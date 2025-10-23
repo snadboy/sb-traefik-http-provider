@@ -67,20 +67,38 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Send success notification to Gotify
+      - name: Send success notification to Gotify (Push)
         if: success() && github.event_name != 'pull_request'
         continue-on-error: true
         run: |
           curl -v -X POST "${{ secrets.GOTIFY_URL }}" \
             -F "title=Docker Build Success" \
-            -F "message=sb-traefik-http-provider built successfully" \
+            -F "message=sb-traefik-http-provider built and pushed successfully (branch: ${{ github.ref_name }})" \
             -F "priority=5"
 
-      - name: Send failure notification to Gotify
+      - name: Send failure notification to Gotify (Push)
         if: failure() && github.event_name != 'pull_request'
         continue-on-error: true
         run: |
           curl -v -X POST "${{ secrets.GOTIFY_URL }}" \
             -F "title=Docker Build Failed" \
-            -F "message=sb-traefik-http-provider build failed" \
+            -F "message=sb-traefik-http-provider build failed (branch: ${{ github.ref_name }})" \
+            -F "priority=8"
+
+      - name: Send success notification to Gotify (PR)
+        if: success() && github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          curl -v -X POST "${{ secrets.GOTIFY_URL }}" \
+            -F "title=PR Build Success" \
+            -F "message=PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }} - Build successful" \
+            -F "priority=4"
+
+      - name: Send failure notification to Gotify (PR)
+        if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          curl -v -X POST "${{ secrets.GOTIFY_URL }}" \
+            -F "title=PR Build Failed" \
+            -F "message=PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }} - Build failed" \
             -F "priority=8"
