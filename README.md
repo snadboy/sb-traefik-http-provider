@@ -2,6 +2,8 @@
 
 A high-performance FastAPI HTTP provider for Traefik that discovers Docker containers across multiple SSH-accessible hosts. Uses simplified `snadboy.revp` labels instead of complex Traefik syntax.
 
+> **Note**: This is a test change to verify PR notifications.
+
 ## Key Features
 
 - **Event-Driven**: Real-time Docker event streams with intelligent caching and 2s debouncing
