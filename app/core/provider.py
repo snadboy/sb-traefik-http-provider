@@ -367,15 +367,35 @@ class TraefikProvider:
             redirect_https = config.get('redirect-https', 'true').lower() == 'true'
             cert_resolver = config.get('https-certresolver', 'letsencrypt')
 
-            # Support comma-separated domains for multiple domains per port
-            # e.g., "app.example.com,app2.example.com" -> ["app.example.com", "app2.example.com"]
-            domains = [d.strip() for d in domain.split(',') if d.strip()]
+            # Support comma-separated domains with optional :redirect/:noredirect suffix
+            # e.g., "app.example.com:redirect,app2.example.com:noredirect"
+            # Default is :redirect for backward compatibility
+            domains_with_redirect = []
+            for d in domain.split(','):
+                d = d.strip()
+                if not d:
+                    continue
+
+                # Check for :redirect or :noredirect suffix
+                if ':noredirect' in d.lower():
+                    domain_name = d.rsplit(':', 1)[0].strip()
+                    domains_with_redirect.append({'domain': domain_name, 'redirect': False})
+                elif ':redirect' in d.lower():
+                    domain_name = d.rsplit(':', 1)[0].strip()
+                    domains_with_redirect.append({'domain': domain_name, 'redirect': True})
+                else:
+                    # Default: redirect=True for backward compatibility
+                    domains_with_redirect.append({'domain': d, 'redirect': True})
+
+            # Extract just the domain names for backward compatibility
+            domains = [d['domain'] for d in domains_with_redirect]
 
             service_name = f"{container_name}-{internal_port}"
             service_url = f"{backend_proto}://{resolved_hostname}:{external_port}{backend_path}"
 
             revp_config['services'][service_name] = {
-                'domains': domains,  # Changed to plural and list
+                'domains': domains,  # List of domain names (backward compat)
+                'domains_with_redirect': domains_with_redirect,  # List of {domain, redirect} dicts
                 'service_url': service_url,
                 'internal_port': internal_port,
                 'external_port': external_port,
@@ -385,6 +405,97 @@ class TraefikProvider:
             }
 
         return revp_config
+
+    def _create_routers_for_domains(
+        self,
+        service_name: str,
+        domains_list: List[str],
+        https_enabled: bool,
+        enable_redirect: bool,
+        router_suffix: str = ""
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Create HTTP and HTTPS routers for a list of domains.
+
+        Args:
+            service_name: The Traefik service name to route to
+            domains_list: List of domain names (e.g., ["app.com", "app2.com"])
+            https_enabled: Whether to create HTTPS router
+            enable_redirect: Whether HTTP should redirect to HTTPS
+            router_suffix: Optional suffix for router names (e.g., "-redirect" or "-noredirect")
+
+        Returns:
+            Tuple of (routers_dict, middlewares_dict)
+        """
+        routers = {}
+        middlewares = {}
+
+        if not domains_list:
+            return routers, middlewares
+
+        # Build Traefik Host rule with OR for multiple domains
+        host_rules = ' || '.join([f"Host(`{d}`)" for d in domains_list])
+
+        if https_enabled and enable_redirect:
+            # HTTPS with redirect: HTTP router redirects, HTTPS router serves
+
+            # Create HTTPS router
+            https_router_name = f"{service_name}{router_suffix}-https-router"
+            routers[https_router_name] = {
+                'rule': host_rules,
+                'service': service_name,
+                'entryPoints': ['websecure'],
+                'tls': {}
+            }
+
+            # Create HTTP redirect router
+            http_router_name = f"{service_name}{router_suffix}-http-router"
+            redirect_middleware_name = f"{service_name}{router_suffix}-redirect-https"
+
+            middlewares[redirect_middleware_name] = {
+                'redirectScheme': {
+                    'scheme': 'https',
+                    'permanent': True
+                }
+            }
+
+            routers[http_router_name] = {
+                'rule': host_rules,
+                'service': service_name,
+                'entryPoints': ['web'],
+                'middlewares': [redirect_middleware_name]
+            }
+
+        elif https_enabled and not enable_redirect:
+            # Both HTTP and HTTPS without redirect
+
+            # HTTP router
+            http_router_name = f"{service_name}{router_suffix}-http-router"
+            routers[http_router_name] = {
+                'rule': host_rules,
+                'service': service_name,
+                'entryPoints': ['web']
+            }
+
+            # HTTPS router
+            https_router_name = f"{service_name}{router_suffix}-https-router"
+            routers[https_router_name] = {
+                'rule': host_rules,
+                'service': service_name,
+                'entryPoints': ['websecure'],
+                'tls': {}
+            }
+
+        else:
+            # HTTP only
+            http_router_name = f"{service_name}{router_suffix}-http-router"
+            routers[http_router_name] = {
+                'rule': host_rules,
+                'service': service_name,
+                'entryPoints': ['web']
+            }
+
+        return routers, middlewares
 
     def build_traefik_config(self, containers_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Build complete Traefik configuration from container data"""
@@ -482,14 +593,12 @@ class TraefikProvider:
                     logger.debug(f"    HTTPS: {service_config['https_enabled']}, Redirect: {service_config['redirect_https']}")
 
                     domains = service_config['domains']
+                    domains_with_redirect = service_config['domains_with_redirect']
                     https_enabled = service_config['https_enabled']
                     redirect_https = service_config['redirect_https']
                     # cert_resolver not needed - using wildcard certificate
 
-                    # Build Traefik Host rule with OR for multiple domains
-                    # e.g., "Host(`app.com`) || Host(`app2.com`)"
-                    host_rules = ' || '.join([f"Host(`{d}`)" for d in domains])
-                    logger.debug(f"    Domains: {', '.join(domains)} -> Rule: {host_rules}")
+                    logger.debug(f"    Domains: {', '.join(domains)}")
 
                     # Create service (shared by all routers)
                     config['http']['services'][service_name] = {
@@ -500,64 +609,36 @@ class TraefikProvider:
                         }
                     }
 
-                    if https_enabled and redirect_https:
-                        # HTTPS with redirect: HTTP router redirects, HTTPS router serves
+                    # Group domains by redirect setting
+                    domains_with_redirect_enabled = [d['domain'] for d in domains_with_redirect if d['redirect']]
+                    domains_with_redirect_disabled = [d['domain'] for d in domains_with_redirect if not d['redirect']]
 
-                        # Create HTTPS router
-                        https_router_name = f"{service_name}-https-router"
-                        config['http']['routers'][https_router_name] = {
-                            'rule': host_rules,
-                            'service': service_name,
-                            'entryPoints': ['websecure'],
-                            'tls': {}  # Uses wildcard certificate from dynamic config
-                        }
+                    logger.debug(f"      With redirect: {domains_with_redirect_enabled}")
+                    logger.debug(f"      Without redirect: {domains_with_redirect_disabled}")
 
-                        # Create HTTP redirect router
-                        http_router_name = f"{service_name}-http-router"
-                        redirect_middleware_name = f"{service_name}-redirect-https"
+                    # Create routers for domains WITH redirect
+                    if domains_with_redirect_enabled:
+                        redirect_routers, redirect_mws = self._create_routers_for_domains(
+                            service_name=service_name,
+                            domains_list=domains_with_redirect_enabled,
+                            https_enabled=https_enabled,
+                            enable_redirect=True,
+                            router_suffix="-redirect" if domains_with_redirect_disabled else ""
+                        )
+                        config['http']['routers'].update(redirect_routers)
+                        middlewares.update(redirect_mws)
 
-                        middlewares[redirect_middleware_name] = {
-                            'redirectScheme': {
-                                'scheme': 'https',
-                                'permanent': True
-                            }
-                        }
-
-                        config['http']['routers'][http_router_name] = {
-                            'rule': host_rules,
-                            'service': service_name,
-                            'entryPoints': ['web'],
-                            'middlewares': [redirect_middleware_name]
-                        }
-
-                    elif https_enabled and not redirect_https:
-                        # Both HTTP and HTTPS without redirect
-
-                        # HTTP router
-                        http_router_name = f"{service_name}-http-router"
-                        config['http']['routers'][http_router_name] = {
-                            'rule': host_rules,
-                            'service': service_name,
-                            'entryPoints': ['web']
-                        }
-
-                        # HTTPS router
-                        https_router_name = f"{service_name}-https-router"
-                        config['http']['routers'][https_router_name] = {
-                            'rule': host_rules,
-                            'service': service_name,
-                            'entryPoints': ['websecure'],
-                            'tls': {}  # Uses wildcard certificate from dynamic config
-                        }
-
-                    else:
-                        # HTTP only
-                        http_router_name = f"{service_name}-http-router"
-                        config['http']['routers'][http_router_name] = {
-                            'rule': host_rules,
-                            'service': service_name,
-                            'entryPoints': ['web']
-                        }
+                    # Create routers for domains WITHOUT redirect
+                    if domains_with_redirect_disabled:
+                        noredirect_routers, noredirect_mws = self._create_routers_for_domains(
+                            service_name=service_name,
+                            domains_list=domains_with_redirect_disabled,
+                            https_enabled=https_enabled,
+                            enable_redirect=False,
+                            router_suffix="-noredirect" if domains_with_redirect_enabled else ""
+                        )
+                        config['http']['routers'].update(noredirect_routers)
+                        middlewares.update(noredirect_mws)
             else:
                 # Track excluded container
                 snadboy_labels = {k: v for k, v in labels.items() if k.startswith('snadboy.revp')}
