@@ -187,8 +187,26 @@ class TraefikProvider:
         # Fall back to alias if we can't resolve
         return alias
 
-    def _get_backend_hostname(self, alias: str) -> str:
-        """Get the backend hostname/IP for Traefik service URLs from config"""
+    def _is_local_host(self, alias: str) -> bool:
+        """Check if a host is configured as local (is_local: true)"""
+        try:
+            ssh_hosts_file = 'config/ssh-hosts.yaml'
+            if os.path.exists(ssh_hosts_file):
+                with open(ssh_hosts_file, 'r') as f:
+                    ssh_config = yaml.safe_load(f)
+                    host_config = ssh_config.get('hosts', {}).get(alias, {})
+                    return host_config.get('is_local', False)
+        except Exception as e:
+            logger.warning(f"Failed to check is_local for alias '{alias}': {e}")
+        return False
+
+    def _get_backend_hostname(self, alias: str, container_name: str = None) -> str:
+        """Get the backend hostname/IP for Traefik service URLs from config
+
+        For remote hosts: use backend_hostname from config, or fall back to alias
+        For local hosts: use container_name (Docker network DNS) if provided,
+                        otherwise fall back to alias
+        """
         try:
             ssh_hosts_file = 'config/ssh-hosts.yaml'
             if os.path.exists(ssh_hosts_file):
@@ -196,14 +214,16 @@ class TraefikProvider:
                     ssh_config = yaml.safe_load(f)
                     host_config = ssh_config.get('hosts', {}).get(alias, {})
 
-                    # For remote hosts, use backend_hostname
-                    # For local hosts, use alias (e.g., 'localhost' or Docker network name)
+                    # For remote hosts, use backend_hostname or alias
+                    # For local hosts, use container_name for Docker network DNS resolution
                     if not host_config.get('is_local', False):
                         hostname = host_config.get('backend_hostname', alias)
                     else:
-                        hostname = alias
+                        # Local host: use container name so Traefik can reach it via Docker network
+                        # Fall back to alias if container_name not provided
+                        hostname = container_name if container_name else alias
 
-                    logger.debug(f"Resolved backend alias '{alias}' to hostname '{hostname}'")
+                    logger.debug(f"Resolved backend alias '{alias}' to hostname '{hostname}' (container={container_name})")
                     return hostname
         except Exception as e:
             logger.warning(f"Failed to resolve backend hostname for alias '{alias}': {e}")
@@ -316,7 +336,9 @@ class TraefikProvider:
 
         # Resolve the host alias to backend hostname for service URL
         # This is the hostname/IP that Traefik will use to forward traffic
-        resolved_hostname = self._get_backend_hostname(host)
+        # For local hosts, use container name so Traefik can reach via Docker network
+        resolved_hostname = self._get_backend_hostname(host, container_name)
+        is_local = self._is_local_host(host)
 
         # Look for snadboy.revp.{PORT}.* labels
         revp_pattern = re.compile(r'^snadboy\.revp\.(\d+)\.(.+)$')
@@ -391,7 +413,10 @@ class TraefikProvider:
             domains = [d['domain'] for d in domains_with_redirect]
 
             service_name = f"{container_name}-{internal_port}"
-            service_url = f"{backend_proto}://{resolved_hostname}:{external_port}{backend_path}"
+            # For local hosts, use internal port (Docker network)
+            # For remote hosts, use external port (host port mapping)
+            backend_port = internal_port if is_local else external_port
+            service_url = f"{backend_proto}://{resolved_hostname}:{backend_port}{backend_path}"
 
             revp_config['services'][service_name] = {
                 'domains': domains,  # List of domain names (backward compat)
