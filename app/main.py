@@ -114,11 +114,13 @@ def create_app() -> FastAPI:
     # Include API routes
     app.include_router(router)
 
-    # Mount static files for dashboard
+    # Mount static files for dashboard at root
+    # Order matters: API routes are registered first via include_router,
+    # then static files are mounted last as a catch-all
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     if os.path.exists(static_dir):
-        app.mount("/static", StaticFiles(directory=static_dir, html=True), name="static")
-        logger.info(f"Mounted static files from: {static_dir}")
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+        logger.info(f"Mounted static files at / from: {static_dir}")
     else:
         logger.warning(f"Static directory not found: {static_dir}")
 

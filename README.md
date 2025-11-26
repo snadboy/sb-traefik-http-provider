@@ -70,8 +70,7 @@ labels:
   # Optional (defaults shown)
   - "snadboy.revp.PORT.https=true"              # Enable HTTPS
   - "snadboy.revp.PORT.redirect-https=true"     # HTTP→HTTPS redirect
-  - "snadboy.revp.PORT.backend-proto=http"      # Backend protocol
-  - "snadboy.revp.PORT.backend-path=/"          # Backend path
+  - "snadboy.revp.PORT.backend-proto=http"      # Backend protocol (http or https)
 ```
 
 ### Examples
@@ -88,11 +87,10 @@ labels:
 - "snadboy.revp.80.redirect-https=false"
 ```
 
-**Custom backend:**
+**HTTPS backend (e.g., self-signed cert):**
 ```yaml
 - "snadboy.revp.8080.domain=api.example.com"
 - "snadboy.revp.8080.backend-proto=https"
-- "snadboy.revp.8080.backend-path=/v1"
 ```
 
 **Multiple ports:**
@@ -102,35 +100,16 @@ labels:
 - "snadboy.revp.9090.https=false"
 ```
 
-### Multi-Route Labels
+### Multiple Domains per Port
 
-Route different domains to different paths on the same port using `.N` suffix:
+You can route multiple domains to the same container port using comma-separated values:
 
 ```yaml
 labels:
-  # Route 1: API at root path (no suffix = .1)
-  - "snadboy.revp.8080.domain=api.example.com"
-
-  # Route 2: Dashboard at /static path
-  - "snadboy.revp.8080.domain.2=dashboard.example.com"
-  - "snadboy.revp.8080.backend-path.2=/static"
-
-  # Route 3: Docs at /docs path with different settings
-  - "snadboy.revp.8080.domain.3=docs.example.com"
-  - "snadboy.revp.8080.backend-path.3=/docs"
-  - "snadboy.revp.8080.https.3=false"
+  - "snadboy.revp.8080.domain=app.example.com,app2.example.com"
 ```
 
-Result:
-- `https://api.example.com` → container:8080/
-- `https://dashboard.example.com` → container:8080/static
-- `http://docs.example.com` → container:8080/docs
-
-**Key points:**
-- No suffix is equivalent to `.1` (backwards compatible)
-- Each route inherits from code defaults, not from other routes
-- Routes can be sparse (e.g., only `.2` and `.5` defined)
-- All settings support the `.N` suffix: `domain`, `backend-path`, `backend-proto`, `https`, `redirect-https`, `https-certresolver`
+Result: Both `https://app.example.com` and `https://app2.example.com` → container:8080
 
 ## Static Routes
 
@@ -178,14 +157,15 @@ Certificates auto-renew 30 days before expiration.
 
 ## API Endpoints
 
+- `GET /` - Dashboard (web UI)
 - `GET /health` - Health check
 - `GET /api/traefik/config` - Current Traefik configuration
 - `GET /api/status` - Provider status and diagnostics
 - `GET /api/containers` - All discovered containers
-- `GET /api/ssh/status` - SSH host health status
-- `POST /api/cache/refresh` - Force cache refresh
-- `GET /docs` - Interactive API documentation
-- `GET /metrics` - Prometheus metrics
+- `GET /api/hosts` - SSH host health status
+- `GET /api/services` - Formatted service list for dashboard
+- `GET /api/events` - Recent container events
+- `GET /docs` - Interactive API documentation (Swagger UI)
 
 ## Configuration Files
 
