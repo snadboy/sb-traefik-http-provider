@@ -328,7 +328,16 @@ class TraefikProvider:
 
     def extract_snadboy_revp_labels(self, labels: Dict[str, str], container_name: str,
                                    host: str, port_mappings: Dict[str, str]) -> Dict[str, Any]:
-        """Extract and parse snadboy.revp labels from container"""
+        """Extract and parse snadboy.revp labels from container
+
+        Supports multi-route labels with .N suffix:
+          - snadboy.revp.8080.domain=api.example.com        (route 1, same as .1)
+          - snadboy.revp.8080.domain.2=dashboard.example.com (route 2)
+          - snadboy.revp.8080.backend-path.2=/static        (route 2 specific)
+
+        Each route inherits from code defaults, not from other routes.
+        Routes can be sparse (e.g., only .2 and .5 defined).
+        """
         revp_config = {
             'enabled': False,
             'services': {}
@@ -340,9 +349,13 @@ class TraefikProvider:
         resolved_hostname = self._get_backend_hostname(host, container_name)
         is_local = self._is_local_host(host)
 
-        # Look for snadboy.revp.{PORT}.* labels
-        revp_pattern = re.compile(r'^snadboy\.revp\.(\d+)\.(.+)$')
-        port_configs = {}
+        # Look for snadboy.revp.{PORT}.{setting}[.N] labels
+        # Examples: snadboy.revp.8080.domain, snadboy.revp.8080.domain.2, snadboy.revp.8080.backend-path.3
+        revp_pattern = re.compile(r'^snadboy\.revp\.(\d+)\.([a-zA-Z-]+)(?:\.(\d+))?$')
+
+        # Structure: port_configs[port][route_num][setting] = value
+        # route_num '1' is used for labels without suffix (backwards compat)
+        port_configs: Dict[str, Dict[str, Dict[str, str]]] = {}
 
         for label, value in labels.items():
             match = revp_pattern.match(label)
@@ -351,10 +364,13 @@ class TraefikProvider:
 
             port = match.group(1)
             setting = match.group(2)
+            route_num = match.group(3) if match.group(3) else '1'  # Default to route 1
 
             if port not in port_configs:
                 port_configs[port] = {}
-            port_configs[port][setting] = value
+            if route_num not in port_configs[port]:
+                port_configs[port][route_num] = {}
+            port_configs[port][route_num][setting] = value
 
         if not port_configs:
             return revp_config
@@ -362,72 +378,81 @@ class TraefikProvider:
         revp_config['enabled'] = True
 
         # Process each port configuration
-        for internal_port, config in port_configs.items():
-            domain = config.get('domain')
-            if not domain:
-                # Track label parsing error for missing domain
-                self.track_label_parsing_error(
-                    container_name,
-                    f"snadboy.revp.{internal_port}.*",
-                    f"Missing required 'domain' label for port {internal_port}"
-                )
-                continue
-
-            # Get external port mapping
+        for internal_port, routes in port_configs.items():
+            # Get external port mapping (shared across all routes for this port)
             external_port = port_mappings.get(f"{internal_port}/tcp", internal_port)
 
-            # Build service configuration
-            backend_proto = config.get('backend-proto', 'http')
-            backend_path = config.get('backend-path', '/')
-
-            # Ensure backend_path starts with /
-            if not backend_path.startswith('/'):
-                backend_path = '/' + backend_path
-
-            # HTTPS configuration
-            https_enabled = config.get('https', 'true').lower() == 'true'
-            redirect_https = config.get('redirect-https', 'true').lower() == 'true'
-            cert_resolver = config.get('https-certresolver', 'letsencrypt')
-
-            # Support comma-separated domains with optional :redirect/:noredirect suffix
-            # e.g., "app.example.com:redirect,app2.example.com:noredirect"
-            # Default is :redirect for backward compatibility
-            domains_with_redirect = []
-            for d in domain.split(','):
-                d = d.strip()
-                if not d:
-                    continue
-
-                # Check for :redirect or :noredirect suffix
-                if ':noredirect' in d.lower():
-                    domain_name = d.rsplit(':', 1)[0].strip()
-                    domains_with_redirect.append({'domain': domain_name, 'redirect': False})
-                elif ':redirect' in d.lower():
-                    domain_name = d.rsplit(':', 1)[0].strip()
-                    domains_with_redirect.append({'domain': domain_name, 'redirect': True})
-                else:
-                    # Default: redirect=True for backward compatibility
-                    domains_with_redirect.append({'domain': d, 'redirect': True})
-
-            # Extract just the domain names for backward compatibility
-            domains = [d['domain'] for d in domains_with_redirect]
-
-            service_name = f"{container_name}-{internal_port}"
             # For local hosts, use internal port (Docker network)
             # For remote hosts, use external port (host port mapping)
             backend_port = internal_port if is_local else external_port
-            service_url = f"{backend_proto}://{resolved_hostname}:{backend_port}{backend_path}"
 
-            revp_config['services'][service_name] = {
-                'domains': domains,  # List of domain names (backward compat)
-                'domains_with_redirect': domains_with_redirect,  # List of {domain, redirect} dicts
-                'service_url': service_url,
-                'internal_port': internal_port,
-                'external_port': external_port,
-                'https_enabled': https_enabled,
-                'redirect_https': redirect_https,
-                'cert_resolver': cert_resolver
-            }
+            # Process each route for this port
+            for route_num, config in routes.items():
+                domain = config.get('domain')
+                if not domain:
+                    # Track label parsing error for missing domain
+                    route_label = f"snadboy.revp.{internal_port}.*" if route_num == '1' else f"snadboy.revp.{internal_port}.*.{route_num}"
+                    self.track_label_parsing_error(
+                        container_name,
+                        route_label,
+                        f"Missing required 'domain' label for port {internal_port} route {route_num}"
+                    )
+                    continue
+
+                # Build service configuration with code defaults
+                backend_proto = config.get('backend-proto', 'http')
+                backend_path = config.get('backend-path', '/')
+
+                # Ensure backend_path starts with /
+                if not backend_path.startswith('/'):
+                    backend_path = '/' + backend_path
+
+                # HTTPS configuration (code defaults)
+                https_enabled = config.get('https', 'true').lower() == 'true'
+                redirect_https = config.get('redirect-https', 'true').lower() == 'true'
+                cert_resolver = config.get('https-certresolver', 'letsencrypt')
+
+                # Support comma-separated domains with optional :redirect/:noredirect suffix
+                # e.g., "app.example.com:redirect,app2.example.com:noredirect"
+                # Default is :redirect for backward compatibility
+                domains_with_redirect = []
+                for d in domain.split(','):
+                    d = d.strip()
+                    if not d:
+                        continue
+
+                    # Check for :redirect or :noredirect suffix
+                    if ':noredirect' in d.lower():
+                        domain_name = d.rsplit(':', 1)[0].strip()
+                        domains_with_redirect.append({'domain': domain_name, 'redirect': False})
+                    elif ':redirect' in d.lower():
+                        domain_name = d.rsplit(':', 1)[0].strip()
+                        domains_with_redirect.append({'domain': domain_name, 'redirect': True})
+                    else:
+                        # Default: redirect=True for backward compatibility
+                        domains_with_redirect.append({'domain': d, 'redirect': True})
+
+                # Extract just the domain names for backward compatibility
+                domains = [d['domain'] for d in domains_with_redirect]
+
+                # Service name: {container}-{port} for route 1, {container}-{port}-N for others
+                if route_num == '1':
+                    service_name = f"{container_name}-{internal_port}"
+                else:
+                    service_name = f"{container_name}-{internal_port}-{route_num}"
+
+                service_url = f"{backend_proto}://{resolved_hostname}:{backend_port}{backend_path}"
+
+                revp_config['services'][service_name] = {
+                    'domains': domains,  # List of domain names (backward compat)
+                    'domains_with_redirect': domains_with_redirect,  # List of {domain, redirect} dicts
+                    'service_url': service_url,
+                    'internal_port': internal_port,
+                    'external_port': external_port,
+                    'https_enabled': https_enabled,
+                    'redirect_https': redirect_https,
+                    'cert_resolver': cert_resolver
+                }
 
         return revp_config
 
