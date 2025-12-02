@@ -126,7 +126,19 @@ static_routes:
   - domain: proxmox.example.com
     target: https://192.168.1.100:8006
     description: "Proxmox VE"
+    insecure-skip-verify: true  # Skip TLS verification for self-signed certs
 ```
+
+### Static Route Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `domain` | (required) | Domain name to route |
+| `target` | (required) | Backend URL (http:// or https://) |
+| `description` | `""` | Optional description |
+| `https` | `true` | Enable HTTPS on frontend |
+| `redirect-https` | `true` | Redirect HTTP to HTTPS |
+| `insecure-skip-verify` | `false` | Skip TLS verification for self-signed backend certs |
 
 ## HTTPS Configuration
 

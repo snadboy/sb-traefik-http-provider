@@ -302,6 +302,7 @@ class TraefikProvider:
                 # Apply defaults similar to container routes
                 https_enabled = route.get('https', True)
                 redirect_https = route.get('redirect-https', True)
+                insecure_skip_verify = route.get('insecure-skip-verify', False)
                 description = route.get('description', '')
 
                 static_route = {
@@ -309,13 +310,14 @@ class TraefikProvider:
                     'target': target,
                     'https_enabled': https_enabled,
                     'redirect_https': redirect_https,
+                    'insecure_skip_verify': insecure_skip_verify,
                     'description': description,
                     'type': 'static'
                 }
 
                 static_routes.append(static_route)
                 logger.info(f"  [{idx}] {domain} -> {target}")
-                logger.info(f"      https={https_enabled}, redirect_https={redirect_https}")
+                logger.info(f"      https={https_enabled}, redirect_https={redirect_https}, insecure_skip_verify={insecure_skip_verify}")
                 if description:
                     logger.info(f"      Description: {description}")
 
@@ -680,6 +682,9 @@ class TraefikProvider:
                         f"Container has {len(labels)} labels total, none with snadboy.revp prefix"
                     )
 
+        # Track serversTransports for insecure backends
+        servers_transports = {}
+
         # Process static routes
         static_routes = self._load_static_routes()
         for static_route in static_routes:
@@ -687,21 +692,34 @@ class TraefikProvider:
             target = static_route['target']
             https_enabled = static_route['https_enabled']
             redirect_https = static_route['redirect_https']
+            insecure_skip_verify = static_route['insecure_skip_verify']
 
             logger.debug(f"Processing static route: {domain} -> {target}")
-            logger.debug(f"  HTTPS: {https_enabled}, Redirect: {redirect_https}")
+            logger.debug(f"  HTTPS: {https_enabled}, Redirect: {redirect_https}, InsecureSkipVerify: {insecure_skip_verify}")
 
             # Generate unique service name for static route
             service_name = f"static-{domain.replace('.', '-').replace('*', 'wildcard')}"
 
             # Create service pointing to static target
-            config['http']['services'][service_name] = {
+            service_config = {
                 'loadBalancer': {
                     'servers': [{
                         'url': target
                     }]
                 }
             }
+
+            # If backend uses HTTPS with self-signed cert, create a serversTransport
+            if insecure_skip_verify:
+                transport_name = f"{service_name}-insecure"
+                servers_transports[transport_name] = {
+                    'insecureSkipVerify': True
+                }
+                # Link the service to the transport
+                service_config['loadBalancer']['serversTransport'] = transport_name
+                logger.debug(f"  Created insecure serversTransport: {transport_name}")
+
+            config['http']['services'][service_name] = service_config
 
             if https_enabled and redirect_https:
                 # HTTPS with redirect: HTTP router redirects, HTTPS router serves
@@ -766,15 +784,20 @@ class TraefikProvider:
         if middlewares:
             config['http']['middlewares'] = middlewares
 
+        # Add serversTransports if we have any (for insecure backends)
+        if servers_transports:
+            config['http']['serversTransports'] = servers_transports
+
         # Log configuration statistics
         stats = {
             'routers': len(config['http']['routers']),
             'services': len(config['http']['services']),
             'middlewares': len(middlewares),
-            'static_routes': len(static_routes)
+            'static_routes': len(static_routes),
+            'servers_transports': len(servers_transports)
         }
 
-        logger.info(f"Configuration built: {stats['routers']} routers, {stats['services']} services, {stats['middlewares']} middlewares")
+        logger.info(f"Configuration built: {stats['routers']} routers, {stats['services']} services, {stats['middlewares']} middlewares, {stats['servers_transports']} serversTransports")
 
         # Log services with their URLs
         if config['http']['services']:
