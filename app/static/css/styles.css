@@ -302,6 +302,10 @@ h1 {
     font-weight: 600;
 }
 
+.service-badge.insecure {
+    background: var(--warning);
+}
+
 .service-links {
     display: flex;
     flex-direction: column;

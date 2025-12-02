@@ -954,6 +954,10 @@ async def get_services() -> Dict[str, Any]:
             container = None
             is_static = service_name.startswith('static-')
 
+            # Check if this service uses insecure transport (self-signed certs)
+            servers_transport = service_config.get('loadBalancer', {}).get('serversTransport')
+            insecure_skip_verify = servers_transport is not None and 'insecure' in servers_transport
+
             if backend_url:
                 # Extract host from URL (e.g., http://fabric:3001/ -> fabric)
                 match = re.match(r'https?://([^:]+)', backend_url)
@@ -977,7 +981,8 @@ async def get_services() -> Dict[str, Any]:
                 'backend_url': backend_url,
                 'host': host,
                 'container': container,
-                'is_static': is_static
+                'is_static': is_static,
+                'insecure_skip_verify': insecure_skip_verify
             })
 
         return {

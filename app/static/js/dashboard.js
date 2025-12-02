@@ -141,6 +141,7 @@ class Dashboard {
                 <div class="service-name">
                     ${service.name}
                     ${service.is_static ? '<span class="service-badge">STATIC</span>' : ''}
+                    ${service.insecure_skip_verify ? '<span class="service-badge insecure">INSECURE</span>' : ''}
                 </div>
                 <div class="service-links">
                     ${service.public_urls && service.public_urls.length > 0 ?
