@@ -435,7 +435,8 @@ class TraefikProvider:
         domains_list: List[str],
         https_enabled: bool,
         enable_redirect: bool,
-        router_suffix: str = ""
+        router_suffix: str = "",
+        cert_resolver: str = "letsencrypt"
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Create HTTP and HTTPS routers for a list of domains.
@@ -446,6 +447,7 @@ class TraefikProvider:
             https_enabled: Whether to create HTTPS router
             enable_redirect: Whether HTTP should redirect to HTTPS
             router_suffix: Optional suffix for router names (e.g., "-redirect" or "-noredirect")
+            cert_resolver: Certificate resolver name (default: "letsencrypt")
 
         Returns:
             Tuple of (routers_dict, middlewares_dict)
@@ -468,7 +470,7 @@ class TraefikProvider:
                 'rule': host_rules,
                 'service': service_name,
                 'entryPoints': ['websecure'],
-                'tls': {}
+                'tls': {'certResolver': cert_resolver}
             }
 
             # Create HTTP redirect router
@@ -506,7 +508,7 @@ class TraefikProvider:
                 'rule': host_rules,
                 'service': service_name,
                 'entryPoints': ['websecure'],
-                'tls': {}
+                'tls': {'certResolver': cert_resolver}
             }
 
         else:
@@ -619,7 +621,7 @@ class TraefikProvider:
                     domains_with_redirect = service_config['domains_with_redirect']
                     https_enabled = service_config['https_enabled']
                     redirect_https = service_config['redirect_https']
-                    # cert_resolver not needed - using wildcard certificate
+                    cert_resolver = service_config.get('cert_resolver', 'letsencrypt')
 
                     logger.debug(f"    Domains: {', '.join(domains)}")
 
@@ -646,7 +648,8 @@ class TraefikProvider:
                             domains_list=domains_with_redirect_enabled,
                             https_enabled=https_enabled,
                             enable_redirect=True,
-                            router_suffix="-redirect" if domains_with_redirect_disabled else ""
+                            router_suffix="-redirect" if domains_with_redirect_disabled else "",
+                            cert_resolver=cert_resolver
                         )
                         config['http']['routers'].update(redirect_routers)
                         middlewares.update(redirect_mws)
@@ -658,7 +661,8 @@ class TraefikProvider:
                             domains_list=domains_with_redirect_disabled,
                             https_enabled=https_enabled,
                             enable_redirect=False,
-                            router_suffix="-noredirect" if domains_with_redirect_enabled else ""
+                            router_suffix="-noredirect" if domains_with_redirect_enabled else "",
+                            cert_resolver=cert_resolver
                         )
                         config['http']['routers'].update(noredirect_routers)
                         middlewares.update(noredirect_mws)
@@ -730,7 +734,7 @@ class TraefikProvider:
                     'rule': f"Host(`{domain}`)",
                     'service': service_name,
                     'entryPoints': ['websecure'],
-                    'tls': {}  # Uses wildcard certificate from dynamic config
+                    'tls': {'certResolver': 'letsencrypt'}
                 }
 
                 # Create HTTP redirect router
@@ -768,7 +772,7 @@ class TraefikProvider:
                     'rule': f"Host(`{domain}`)",
                     'service': service_name,
                     'entryPoints': ['websecure'],
-                    'tls': {}  # Uses wildcard certificate from dynamic config
+                    'tls': {'certResolver': 'letsencrypt'}
                 }
 
             else:
