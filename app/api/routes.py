@@ -976,7 +976,6 @@ async def get_services() -> Dict[str, Any]:
 
         # Get local container networks for local host detection
         local_container_networks = _get_local_container_networks()
-        logger.info(f"Local container networks found: {list(local_container_networks.keys())}")
 
         # Build service information from routers and services
         for router_name, router_config in http_routers.items():
@@ -1029,7 +1028,6 @@ async def get_services() -> Dict[str, Any]:
                         if host in local_container_networks:
                             is_local = True
                             networks = local_container_networks[host]
-                            logger.info(f"Service {service_name}: host={host} is LOCAL, networks={networks}")
 
             # Build public URLs for all domains
             public_urls = []
