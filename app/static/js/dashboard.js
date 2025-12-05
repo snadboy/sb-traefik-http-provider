@@ -140,7 +140,8 @@ class Dashboard {
             <div class="service-card" data-name="${service.name.toLowerCase()}">
                 <div class="service-name">
                     ${service.name}
-                    ${service.is_static ? '<span class="service-badge">STATIC</span>' : ''}
+                    ${service.is_static ? '<span class="service-badge static">STATIC</span>' : ''}
+                    ${service.is_local ? '<span class="service-badge local">LOCAL</span>' : ''}
                     ${service.insecure_skip_verify ? '<span class="service-badge insecure">INSECURE</span>' : ''}
                 </div>
                 <div class="service-links">
@@ -162,6 +163,12 @@ class Dashboard {
                         <div class="service-link" style="cursor: default;">
                             <span class="link-icon">📦</span>
                             <span>${service.container} @ ${service.host}</span>
+                        </div>
+                    ` : ''}
+                    ${service.is_local && service.networks && service.networks.length > 0 ? `
+                        <div class="service-link service-networks" style="cursor: default;">
+                            <span class="link-icon">🔌</span>
+                            <span>Networks: ${service.networks.join(', ')}</span>
                         </div>
                     ` : ''}
                 </div>

@@ -302,8 +302,21 @@ h1 {
     font-weight: 600;
 }
 
+.service-badge.static {
+    background: var(--accent);
+}
+
+.service-badge.local {
+    background: var(--success);
+}
+
 .service-badge.insecure {
     background: var(--warning);
+}
+
+.service-networks {
+    font-size: 12px;
+    color: var(--text-tertiary);
 }
 
 .service-links {

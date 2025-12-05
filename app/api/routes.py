@@ -912,6 +912,55 @@ async def _get_ssh_connectivity(provider: TraefikProvider) -> Dict[str, Dict[str
     return connectivity
 
 
+def _get_local_container_networks() -> Dict[str, list]:
+    """Get network information for all local containers.
+
+    Returns a dict mapping container name -> list of network names.
+    This is used to identify local containers and their networks for the dashboard.
+
+    Note: This uses the local Docker socket to get container info.
+    """
+    try:
+        # Use docker ps to get all running containers, then inspect for networks
+        result = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if result.returncode != 0:
+            logger.debug(f"Failed to list local containers: {result.stderr}")
+            return {}
+
+        container_names = result.stdout.strip().split('\n')
+        container_networks = {}
+
+        for name in container_names:
+            if not name:
+                continue
+            try:
+                # Get networks for this container
+                inspect_result = subprocess.run(
+                    ["docker", "inspect", name, "--format",
+                     "{{range $net, $conf := .NetworkSettings.Networks}}{{$net}} {{end}}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if inspect_result.returncode == 0:
+                    networks = inspect_result.stdout.strip().split()
+                    container_networks[name] = networks
+            except Exception as e:
+                logger.debug(f"Could not get networks for container {name}: {e}")
+
+        return container_networks
+
+    except Exception as e:
+        logger.debug(f"Could not get local container networks: {e}")
+        return {}
+
+
 # Dashboard API Endpoints
 
 @router.get("/api/services")
@@ -925,6 +974,10 @@ async def get_services() -> Dict[str, Any]:
         http_services = config.get('http', {}).get('services', {})
         http_routers = config.get('http', {}).get('routers', {})
 
+        # Get local container networks for local host detection
+        local_container_networks = _get_local_container_networks()
+        logger.info(f"Local container networks found: {list(local_container_networks.keys())}")
+
         # Build service information from routers and services
         for router_name, router_config in http_routers.items():
             service_name = router_config.get('service')
@@ -937,10 +990,10 @@ async def get_services() -> Dict[str, Any]:
 
             # Get domains from router rule (supports multiple domains with OR operator)
             # e.g., "Host(`app.com`) || Host(`app2.com`)" -> ["app.com", "app2.com"]
+            import re
             rule = router_config.get('rule', '')
             domains = []
             if 'Host(' in rule:
-                import re
                 # Extract all Host(`domain`) patterns
                 domain_matches = re.findall(r'Host\(`([^`]+)`\)', rule)
                 domains = domain_matches if domain_matches else []
@@ -958,6 +1011,10 @@ async def get_services() -> Dict[str, Any]:
             servers_transport = service_config.get('loadBalancer', {}).get('serversTransport')
             insecure_skip_verify = servers_transport is not None and 'insecure' in servers_transport
 
+            # Determine if this is a local container (host is container name, not a remote hostname)
+            is_local = False
+            networks = []
+
             if backend_url:
                 # Extract host from URL (e.g., http://fabric:3001/ -> fabric)
                 match = re.match(r'https?://([^:]+)', backend_url)
@@ -966,6 +1023,13 @@ async def get_services() -> Dict[str, Any]:
                     if not is_static and host not in ['localhost', '127.0.0.1']:
                         # Extract container name from service name (e.g., uptime-kuma-3001 -> uptime-kuma)
                         container = service_name.rsplit('-', 1)[0] if '-' in service_name else service_name
+
+                        # Check if this host is a container name (local) vs a remote host
+                        # For local containers, the backend URL uses container name as host
+                        if host in local_container_networks:
+                            is_local = True
+                            networks = local_container_networks[host]
+                            logger.info(f"Service {service_name}: host={host} is LOCAL, networks={networks}")
 
             # Build public URLs for all domains
             public_urls = []
@@ -982,6 +1046,8 @@ async def get_services() -> Dict[str, Any]:
                 'host': host,
                 'container': container,
                 'is_static': is_static,
+                'is_local': is_local,
+                'networks': networks,
                 'insecure_skip_verify': insecure_skip_verify
             })
 
