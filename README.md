@@ -167,6 +167,75 @@ DOMAIN=example.com
 
 Certificates auto-renew 30 days before expiration.
 
+## TLS/SSL Verification
+
+### Self-Signed Backend Certificates (Static Routes)
+
+When routing to backend services with self-signed certificates (e.g., Proxmox, iDRAC, network devices), Traefik will reject the connection by default. Use the `insecure-skip-verify` option to bypass certificate verification:
+
+```yaml
+static_routes:
+  - domain: proxmox.example.com
+    target: https://192.168.1.100:8006
+    description: "Proxmox VE with self-signed cert"
+    https: true
+    redirect-https: true
+    insecure-skip-verify: true
+```
+
+This creates a Traefik `serversTransport` with `insecureSkipVerify: true` for that backend. The dashboard will display an **INSECURE** badge for routes using this option.
+
+**Use cases:**
+- Proxmox/Proxmox Backup Server web interfaces
+- Network device management pages (routers, switches, UPS)
+- Internal services with self-signed certificates
+- Development/staging environments
+
+### Cloudflare Tunnel TLS Verification
+
+When using Cloudflare Tunnels (`cloudflared`) to expose services, the tunnel must connect to your origin server (Traefik). If the tunnel connects via HTTPS, certificate verification can fail in two scenarios:
+
+**Scenario 1: Using IP address as origin**
+```
+Error: x509: cannot validate certificate for 192.168.1.100 because it doesn't contain any IP SANs
+```
+The tunnel is configured with an IP address, but certificates are issued for domain names.
+
+**Scenario 2: Certificate not yet issued**
+Let's Encrypt certificates may not exist yet for new domains, causing connection failures.
+
+**Solution: Disable TLS verification in Cloudflare Tunnel**
+
+In your Cloudflare Tunnel config (`config.yml`):
+```yaml
+ingress:
+  - hostname: myapp.example.com
+    service: https://192.168.1.100
+    originRequest:
+      noTLSVerify: true
+  - hostname: another.example.com
+    service: https://traefik-host
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404
+```
+
+Or via the Cloudflare Zero Trust Dashboard:
+1. Go to **Access** → **Tunnels**
+2. Select your tunnel → **Configure**
+3. Edit the public hostname
+4. Under **Additional application settings** → **TLS**
+5. Enable **No TLS Verify**
+
+**Alternative: Use hostname instead of IP**
+If your tunnel host can resolve the Traefik hostname, use that instead of an IP:
+```yaml
+ingress:
+  - hostname: myapp.example.com
+    service: https://traefik.local
+```
+This allows the certificate to match the hostname.
+
 ## API Endpoints
 
 - `GET /` - Dashboard (web UI)
@@ -202,6 +271,45 @@ Certificates auto-renew 30 days before expiration.
 - **Bridge Mode**: Proper container isolation with explicit port mappings
 - **Tailscale MagicDNS**: Uses `100.100.100.100` for hostname resolution
 - **SSH Access**: Containers use `-H ssh://user@host` for remote Docker access
+
+### Local Container Network Requirements
+
+For containers running on the **same host as Traefik** (local hosts with `is_local: true`), the provider routes traffic using Docker's internal DNS by container name. This requires that **local containers must be on the same Docker network as Traefik**.
+
+**Example: Add container to Traefik network**
+
+```yaml
+services:
+  myapp:
+    image: myapp:latest
+    labels:
+      - "snadboy.revp.8080.domain=myapp.example.com"
+    networks:
+      - traefik
+
+networks:
+  traefik:
+    external: true
+```
+
+**Why this is required:**
+- Local containers are routed via `http://container-name:port/`
+- Docker DNS only resolves container names within the same network
+- Without a shared network, Traefik returns 502 Bad Gateway
+
+**Remote hosts** (via SSH) don't have this requirement - they use the host's IP/hostname and mapped ports.
+
+**Troubleshooting 502 errors for local containers:**
+```bash
+# Check which network Traefik is on
+docker inspect traefik --format '{{range $net, $conf := .NetworkSettings.Networks}}{{$net}} {{end}}'
+
+# Check which network your container is on
+docker inspect myapp --format '{{range $net, $conf := .NetworkSettings.Networks}}{{$net}} {{end}}'
+
+# If different, add your container to Traefik's network
+docker network connect traefik myapp
+```
 
 ## Development
 
