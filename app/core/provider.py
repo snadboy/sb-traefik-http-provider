@@ -88,6 +88,10 @@ class TraefikProvider:
         self._pending_refresh: Optional[asyncio.Task] = None
         self._refresh_debounce_seconds = 2.0  # Wait 2 seconds after last event before refreshing
 
+        # Periodic cache refresh (fallback for missed events)
+        self._periodic_refresh_task: Optional[asyncio.Task] = None
+        self._periodic_refresh_interval = 300  # 5 minutes
+
         # Event history for dashboard
         self._event_history: List[Dict[str, Any]] = []
         self._max_event_history = 200  # Keep last 200 events
@@ -1201,6 +1205,34 @@ class TraefikProvider:
                 self._event_stats[host] = 0
                 logger.info(f"Started event listener for host: {host}")
 
+        # Start periodic refresh task
+        if self._periodic_refresh_task is None:
+            self._periodic_refresh_task = asyncio.create_task(self._periodic_refresh_loop())
+            logger.info(f"Started periodic cache refresh (every {self._periodic_refresh_interval}s)")
+
+    async def _periodic_refresh_loop(self):
+        """Periodically refresh the cache to catch any missed events"""
+        while not self._shutdown_event.is_set():
+            try:
+                # Wait for the refresh interval
+                await asyncio.sleep(self._periodic_refresh_interval)
+
+                if self._shutdown_event.is_set():
+                    break
+
+                # Force a cache refresh
+                logger.info("Periodic cache refresh triggered")
+                await self.get_traefik_config(force_refresh=True)
+                logger.info("Periodic cache refresh completed")
+
+            except asyncio.CancelledError:
+                logger.debug("Periodic refresh loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in periodic refresh loop: {e}", exc_info=True)
+                # Continue running even if refresh fails
+                await asyncio.sleep(30)  # Brief pause before retrying
+
     async def _event_listener_loop_wrapper(self, host: str):
         """Wrapper to catch and log exceptions from event listener loop"""
         try:
@@ -1212,9 +1244,18 @@ class TraefikProvider:
                 del self._event_listener_tasks[host]
 
     async def stop_event_listeners(self):
-        """Stop all Docker event listeners"""
+        """Stop all Docker event listeners and periodic refresh"""
         logger.info("Stopping event listeners...")
         self._shutdown_event.set()
+
+        # Stop periodic refresh task
+        if self._periodic_refresh_task is not None:
+            self._periodic_refresh_task.cancel()
+            try:
+                await self._periodic_refresh_task
+            except asyncio.CancelledError:
+                logger.debug("Periodic refresh task cancelled successfully")
+            self._periodic_refresh_task = None
 
         for host, task in self._event_listener_tasks.items():
             task.cancel()
