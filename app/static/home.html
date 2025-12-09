@@ -386,7 +386,9 @@
                     const name = (service.name || '').toLowerCase();
                     const domain = (service.domain || '').toLowerCase();
                     const desc = (service.description || '').toLowerCase();
-                    if (!name.includes(searchTerm) && !domain.includes(searchTerm) && !desc.includes(searchTerm)) {
+                    const container = (service.container_name || '').toLowerCase();
+                    if (!name.includes(searchTerm) && !domain.includes(searchTerm) &&
+                        !desc.includes(searchTerm) && !container.includes(searchTerm)) {
                         return false;
                     }
                 }
@@ -426,6 +428,7 @@
                 const status = health?.status || 'unknown';
                 const url = `https://${domain}`;
                 const isStatic = service.is_static;
+                const containerName = service.container_name || '';
                 const responseTime = health?.response_time_ms;
                 const lastCheck = health?.last_check;
 
@@ -440,6 +443,7 @@
                         </div>
                         <div class="service-meta">
                             <span class="service-tag ${isStatic ? 'static' : 'container'}">${isStatic ? 'Static' : 'Container'}</span>
+                            ${containerName ? `<span class="service-tag">${containerName}</span>` : ''}
                             ${service.host ? `<span class="service-tag">${service.host}</span>` : ''}
                         </div>
                         ${service.description ? `<div class="service-description">${service.description}</div>` : ''}

@@ -1037,12 +1037,14 @@ async def get_services() -> Dict[str, Any]:
 
             services.append({
                 'name': service_name,
+                'domain': domains[0] if domains else service_name,  # Primary domain for display
                 'domains': domains,  # All domains for this service
                 'public_urls': public_urls,  # All public URLs
                 'public_url': public_urls[0]['url'] if public_urls else None,  # Primary URL for compatibility
                 'backend_url': backend_url,
                 'host': host,
                 'container': container,
+                'container_name': container,  # Alias for home.html compatibility
                 'is_static': is_static,
                 'is_local': is_local,
                 'networks': networks,
