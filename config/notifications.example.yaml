@@ -1,0 +1,41 @@
+# Notifications Configuration
+# Copy to notifications.yaml and configure
+
+notifications:
+  enabled: true
+
+  gotify:
+    url: http://gotify:80  # Internal Docker URL or http://fabric:8083
+    token: ${GOTIFY_TOKEN}  # Environment variable or direct token
+    priority: 5             # Default priority (1-10)
+
+  rules:
+    # Notify when health check fails
+    health_check_failed:
+      enabled: true
+      priority: 8
+      after_failures: 3     # Notify after N consecutive failures
+      cooldown: 300         # Don't repeat for 5 minutes
+
+    # Notify when service recovers
+    service_recovered:
+      enabled: true
+      priority: 3
+
+    # Notify when service is slow (degraded)
+    service_degraded:
+      enabled: false        # Disabled by default (can be noisy)
+      priority: 4
+
+    # Notify on crash loops
+    crash_loop:
+      enabled: true
+      priority: 9
+      threshold: 3          # N restarts in window triggers notification
+      window: 300           # Time window in seconds
+
+    # Notify on certificate expiring (future feature)
+    cert_expiring:
+      enabled: true
+      priority: 7
+      days_before: 14

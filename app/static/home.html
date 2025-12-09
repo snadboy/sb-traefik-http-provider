@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Services Home</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --text-primary: #eaeaea;
+            --text-secondary: #a0a0a0;
+            --accent: #e94560;
+            --success: #4ade80;
+            --warning: #fbbf24;
+            --danger: #ef4444;
+            --unknown: #6b7280;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .header .summary {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .summary-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .summary-dot.up { background: var(--success); }
+        .summary-dot.down { background: var(--danger); }
+        .summary-dot.degraded { background: var(--warning); }
+        .summary-dot.unknown { background: var(--unknown); }
+
+        .filters {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border: none;
+            border-radius: 20px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover, .filter-btn.active {
+            background: var(--accent);
+        }
+
+        .search-box {
+            padding: 10px 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--bg-card);
+            border-radius: 20px;
+            color: var(--text-primary);
+            width: 200px;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .service-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+
+        .service-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .service-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+        }
+
+        .service-card.up::before { background: var(--success); }
+        .service-card.down::before { background: var(--danger); }
+        .service-card.degraded::before { background: var(--warning); }
+        .service-card.unknown::before { background: var(--unknown); }
+
+        .service-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .service-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .service-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            flex-shrink: 0;
+        }
+
+        .service-status.up { background: rgba(74, 222, 128, 0.2); color: var(--success); }
+        .service-status.down { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+        .service-status.degraded { background: rgba(251, 191, 36, 0.2); color: var(--warning); }
+        .service-status.unknown { background: rgba(107, 114, 128, 0.2); color: var(--unknown); }
+
+        .service-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .service-tag {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--bg-secondary);
+        }
+
+        .service-tag.static { background: rgba(233, 69, 96, 0.2); color: var(--accent); }
+        .service-tag.container { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+
+        .service-description {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .service-details {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .service-details span {
+            display: inline-block;
+            margin-right: 12px;
+        }
+
+        .response-time {
+            color: var(--success);
+        }
+
+        .response-time.slow {
+            color: var(--warning);
+        }
+
+        .last-check {
+            font-style: italic;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: var(--danger);
+        }
+
+        .no-services {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+            grid-column: 1 / -1;
+        }
+
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 24px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s;
+        }
+
+        .refresh-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .refresh-btn.spinning {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 600px) {
+            .services-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Services</h1>
+        <div class="summary" id="summary">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <div class="filters">
+        <input type="text" class="search-box" id="search" placeholder="Search services...">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="up">Up</button>
+        <button class="filter-btn" data-filter="down">Down</button>
+        <button class="filter-btn" data-filter="container">Containers</button>
+        <button class="filter-btn" data-filter="static">Static</button>
+    </div>
+
+    <div class="services-grid" id="services-grid">
+        <div class="loading">Loading services...</div>
+    </div>
+
+    <button class="refresh-btn" id="refresh-btn" title="Refresh">&#x21bb;</button>
+
+    <script>
+        let services = [];
+        let healthStatus = {};
+        let currentFilter = 'all';
+        let searchTerm = '';
+
+        async function fetchServices() {
+            try {
+                const response = await fetch('/api/services');
+                if (!response.ok) throw new Error('Failed to fetch services');
+                const data = await response.json();
+                return data.services || [];
+            } catch (error) {
+                console.error('Error fetching services:', error);
+                return [];
+            }
+        }
+
+        async function fetchHealthStatus() {
+            try {
+                const response = await fetch('/api/health-status');
+                if (!response.ok) return { summary: {}, services: {} };
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching health status:', error);
+                return { summary: {}, services: {} };
+            }
+        }
+
+        function getServiceHealth(serviceName) {
+            // Try to find health by domain name
+            for (const [name, health] of Object.entries(healthStatus.services || {})) {
+                if (name === serviceName || serviceName.includes(name) || name.includes(serviceName)) {
+                    return health;
+                }
+            }
+            return null;
+        }
+
+        function formatTimestamp(isoString) {
+            if (!isoString) return 'Never';
+            const date = new Date(isoString);
+            const now = new Date();
+            const diff = (now - date) / 1000;
+
+            if (diff < 60) return 'Just now';
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return date.toLocaleDateString();
+        }
+
+        function renderSummary() {
+            const summary = healthStatus.summary || {};
+            const summaryEl = document.getElementById('summary');
+
+            summaryEl.innerHTML = `
+                <div class="summary-item">
+                    <span class="summary-dot up"></span>
+                    <span>${summary.up || 0} Up</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-dot down"></span>
+                    <span>${summary.down || 0} Down</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-dot degraded"></span>
+                    <span>${summary.degraded || 0} Degraded</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-dot unknown"></span>
+                    <span>${summary.unknown || services.length - (summary.up || 0) - (summary.down || 0) - (summary.degraded || 0)} Unknown</span>
+                </div>
+            `;
+        }
+
+        function renderServices() {
+            const grid = document.getElementById('services-grid');
+
+            // Filter services
+            let filtered = services.filter(service => {
+                // Search filter
+                if (searchTerm) {
+                    const name = (service.name || '').toLowerCase();
+                    const domain = (service.domain || '').toLowerCase();
+                    const desc = (service.description || '').toLowerCase();
+                    if (!name.includes(searchTerm) && !domain.includes(searchTerm) && !desc.includes(searchTerm)) {
+                        return false;
+                    }
+                }
+
+                // Type/status filter
+                const health = getServiceHealth(service.domain || service.name);
+                const status = health?.status || 'unknown';
+                const isStatic = service.is_static;
+
+                switch (currentFilter) {
+                    case 'up': return status === 'up';
+                    case 'down': return status === 'down';
+                    case 'container': return !isStatic;
+                    case 'static': return isStatic;
+                    default: return true;
+                }
+            });
+
+            if (filtered.length === 0) {
+                grid.innerHTML = '<div class="no-services">No services match your criteria</div>';
+                return;
+            }
+
+            // Sort: down first, then degraded, then up, then unknown
+            const statusOrder = { down: 0, degraded: 1, up: 2, unknown: 3 };
+            filtered.sort((a, b) => {
+                const healthA = getServiceHealth(a.domain || a.name);
+                const healthB = getServiceHealth(b.domain || b.name);
+                const statusA = healthA?.status || 'unknown';
+                const statusB = healthB?.status || 'unknown';
+                return (statusOrder[statusA] || 3) - (statusOrder[statusB] || 3);
+            });
+
+            grid.innerHTML = filtered.map(service => {
+                const domain = service.domain || service.name;
+                const health = getServiceHealth(domain);
+                const status = health?.status || 'unknown';
+                const url = `https://${domain}`;
+                const isStatic = service.is_static;
+                const responseTime = health?.response_time_ms;
+                const lastCheck = health?.last_check;
+
+                return `
+                    <a href="${url}" target="_blank" class="service-card ${status}">
+                        <div class="service-header">
+                            <span class="service-name">${domain}</span>
+                            <span class="service-status ${status}">
+                                ${status === 'up' ? '&#x2713;' : status === 'down' ? '&#x2717;' : status === 'degraded' ? '!' : '?'}
+                                ${status.toUpperCase()}
+                            </span>
+                        </div>
+                        <div class="service-meta">
+                            <span class="service-tag ${isStatic ? 'static' : 'container'}">${isStatic ? 'Static' : 'Container'}</span>
+                            ${service.host ? `<span class="service-tag">${service.host}</span>` : ''}
+                        </div>
+                        ${service.description ? `<div class="service-description">${service.description}</div>` : ''}
+                        <div class="service-details">
+                            ${responseTime ? `<span class="response-time ${responseTime > 1000 ? 'slow' : ''}">${responseTime}ms</span>` : ''}
+                            ${lastCheck ? `<span class="last-check">Checked ${formatTimestamp(lastCheck)}</span>` : ''}
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        async function refresh() {
+            const btn = document.getElementById('refresh-btn');
+            btn.classList.add('spinning');
+
+            try {
+                [services, healthStatus] = await Promise.all([
+                    fetchServices(),
+                    fetchHealthStatus()
+                ]);
+                renderSummary();
+                renderServices();
+            } catch (error) {
+                console.error('Error refreshing:', error);
+                document.getElementById('services-grid').innerHTML =
+                    '<div class="error">Error loading services. Please try again.</div>';
+            }
+
+            btn.classList.remove('spinning');
+        }
+
+        // Event listeners
+        document.getElementById('search').addEventListener('input', (e) => {
+            searchTerm = e.target.value.toLowerCase();
+            renderServices();
+        });
+
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentFilter = btn.dataset.filter;
+                renderServices();
+            });
+        });
+
+        document.getElementById('refresh-btn').addEventListener('click', refresh);
+
+        // Initial load
+        refresh();
+
+        // Auto-refresh every 30 seconds
+        setInterval(refresh, 30000);
+    </script>
+</body>
+</html>
