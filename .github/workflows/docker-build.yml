@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+      - 'feature/**'
+      - 'fix/**'
+      - 'dev/**'
     tags:
       - 'v*'
   pull_request:
@@ -47,6 +50,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable={{is_default_branch}}
+            # Feature branches get sanitized branch name as tag (e.g., feature/home-health -> feature-home-health)
+            type=ref,event=branch,suffix=-{{sha}},enable=${{ github.ref_name != 'main' }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -71,9 +76,15 @@ jobs:
         if: success() && github.event_name != 'pull_request'
         continue-on-error: true
         run: |
+          BRANCH="${{ github.ref_name }}"
+          if [ "$BRANCH" = "main" ]; then
+            TAG_INFO="tagged as: latest"
+          else
+            TAG_INFO="tagged as: ${BRANCH//\//-}"
+          fi
           curl -v -X POST "${{ secrets.GOTIFY_URL }}" \
             -F "title=Docker Build Success" \
-            -F "message=sb-traefik-http-provider built and pushed successfully (branch: ${{ github.ref_name }})" \
+            -F "message=sb-traefik-http-provider built and pushed successfully (branch: ${{ github.ref_name }}, ${TAG_INFO})" \
             -F "priority=5"
 
       - name: Send failure notification to Gotify (Push)
