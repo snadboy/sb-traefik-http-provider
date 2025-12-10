@@ -29,19 +29,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Prepare Docker tags
-        id: prep
-        run: |
-          BRANCH_NAME="${{ github.ref_name }}"
-          SANITIZED_BRANCH="${BRANCH_NAME//\//-}"
-          SHORT_SHA="${GITHUB_SHA:0:7}"
-
-          if [ "$BRANCH_NAME" = "main" ]; then
-            echo "tags=latest,main" >> $GITHUB_OUTPUT
-          else
-            echo "tags=${SANITIZED_BRANCH}-latest,${SANITIZED_BRANCH}-${SHORT_SHA}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -50,25 +37,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GH_PAT || secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Generate Docker tags list
-        id: tags
-        run: |
-          IMAGE_BASE="ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}"
-          TAGS="${{ steps.prep.outputs.tags }}"
-
-          # Convert comma-separated tags to newline-separated full image tags
-          TAG_LIST=""
-          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
-          for tag in "${TAG_ARRAY[@]}"; do
-            TAG_LIST="${TAG_LIST}${IMAGE_BASE}:${tag}"$'\n'
-          done
-
-          # Remove trailing newline
-          TAG_LIST=$(echo -n "$TAG_LIST" | sed -z 's/\n$//')
-
-          echo "list<<EOF" >> $GITHUB_OUTPUT
-          echo "$TAG_LIST" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # Main branch gets 'latest' tag
+            type=raw,value=latest,enable={{is_default_branch}}
+            # All branches get branch name as tag (e.g., main, feature-xyz)
+            type=ref,event=branch
+            # Feature/fix/dev branches also get branch-name-sha tag for immutable references
+            type=ref,event=branch,suffix=-{{sha}},enable=${{ github.ref_name != 'main' }}
+            # PR tags
+            type=ref,event=pr
+            # Semver tags for releases
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -84,10 +71,8 @@ jobs:
           file: ./docker/Dockerfile.production
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.tags.outputs.list }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -96,14 +81,16 @@ jobs:
         continue-on-error: true
         run: |
           BRANCH="${{ github.ref_name }}"
+          SANITIZED="${BRANCH//\//-}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
           if [ "$BRANCH" = "main" ]; then
-            TAG_INFO="tagged as: latest"
+            TAG_INFO="tags: latest, main"
           else
-            TAG_INFO="tagged as: ${BRANCH//\//-}"
+            TAG_INFO="tags: ${SANITIZED}, ${SANITIZED}-${SHORT_SHA}"
           fi
           curl -v -X POST "${{ secrets.GOTIFY_URL }}" \
             -F "title=Docker Build Success" \
-            -F "message=sb-traefik-http-provider built and pushed successfully (branch: ${{ github.ref_name }}, ${TAG_INFO})" \
+            -F "message=sb-traefik-http-provider built successfully (branch: ${{ github.ref_name }}, ${TAG_INFO})" \
             -F "priority=5"
 
       - name: Send failure notification to Gotify (Push)
