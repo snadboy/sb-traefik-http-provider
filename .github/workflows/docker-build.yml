@@ -29,6 +29,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Prepare Docker tags
+        id: prep
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          SANITIZED_BRANCH="${BRANCH_NAME//\//-}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+
+          if [ "$BRANCH_NAME" = "main" ]; then
+            echo "tags=latest,main" >> $GITHUB_OUTPUT
+          else
+            echo "tags=${SANITIZED_BRANCH}-latest,${SANITIZED_BRANCH}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -37,24 +50,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GH_PAT || secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            # Feature branches get two tags:
-            # 1. branch-name-latest (moving tag for latest build on that branch)
-            # 2. branch-name-sha (immutable tag for specific commit)
-            type=ref,event=branch,suffix=-latest,enable=${{ github.ref_name != 'main' }}
-            type=ref,event=branch,suffix=-{{sha}},enable=${{ github.ref_name != 'main' }}
+      - name: Generate Docker tags list
+        id: tags
+        run: |
+          IMAGE_BASE="ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}"
+          TAGS="${{ steps.prep.outputs.tags }}"
+
+          # Convert comma-separated tags to newline-separated full image tags
+          TAG_LIST=""
+          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+          for tag in "${TAG_ARRAY[@]}"; do
+            TAG_LIST="${TAG_LIST}${IMAGE_BASE}:${tag}"$'\n'
+          done
+
+          # Remove trailing newline
+          TAG_LIST=$(echo -n "$TAG_LIST" | sed -z 's/\n$//')
+
+          echo "list<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAG_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -70,8 +84,10 @@ jobs:
           file: ./docker/Dockerfile.production
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.tags.outputs.list }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
