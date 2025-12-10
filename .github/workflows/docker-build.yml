@@ -50,7 +50,10 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable={{is_default_branch}}
-            # Feature branches get sanitized branch name as tag (e.g., feature/home-health -> feature-home-health)
+            # Feature branches get two tags:
+            # 1. branch-name-latest (moving tag for latest build on that branch)
+            # 2. branch-name-sha (immutable tag for specific commit)
+            type=ref,event=branch,suffix=-latest,enable=${{ github.ref_name != 'main' }}
             type=ref,event=branch,suffix=-{{sha}},enable=${{ github.ref_name != 'main' }}
 
       - name: Set up QEMU
