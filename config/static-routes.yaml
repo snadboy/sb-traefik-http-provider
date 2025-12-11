@@ -9,17 +9,41 @@ static_routes:
     https: true
     redirect-https: true
   - domain: colossus.isnadboy.com
-    target: https://host-colossus.isnadboy.com:8006
+    target: https://pve-colossus.isnadboy.com:8006
     description: Proxmox node - Colossus
     https: true
     redirect-https: true
+    insecure-skip-verify: true
   - domain: guardian.isnadboy.com
-    target: https://host-guardian.isnadboy.com:8006
+    target: https://pve-guardian.isnadboy.com:8006
     description: Proxmox node - Guardian
     https: true
     redirect-https: true
+    insecure-skip-verify: true
+  - domain: svalbard.isnadboy.com
+    target: https://host-svalbard.isnadboy.com:8007
+    description: Proxmox Backup node - Svalbard
+    https: true
+    redirect-https: true
+    insecure-skip-verify: true
+  - domain: alexandria.isnadboy.com
+    target: https://host-alexandria.isnadboy.com:8007
+    description: Proxmox Backup node - Alexandria
+    https: true
+    redirect-https: true
+    insecure-skip-verify: true
   - domain: ns.isnadboy.com
     target: http://host-ns.isnadboy.com:5380
     description: Internal DNS Server
+    https: true
+    redirect-https: true
+  - domain: ha.isnadboy.com
+    target: http://host-ha.isnadboy.com:8123
+    description: Home Assistant
+    https: true
+    redirect-https: true
+  - domain: unifi.isnadboy.com
+    target: https://host-unifi.isnadboy.com
+    description: UniFi Network Controller
     https: true
     redirect-https: true
