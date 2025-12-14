@@ -1037,12 +1037,14 @@ async def get_services() -> Dict[str, Any]:
 
             services.append({
                 'name': service_name,
+                'domain': domains[0] if domains else service_name,  # Primary domain for display
                 'domains': domains,  # All domains for this service
                 'public_urls': public_urls,  # All public URLs
                 'public_url': public_urls[0]['url'] if public_urls else None,  # Primary URL for compatibility
                 'backend_url': backend_url,
                 'host': host,
                 'container': container,
+                'container_name': container,  # Alias for home.html compatibility
                 'is_static': is_static,
                 'is_local': is_local,
                 'networks': networks,
@@ -1139,4 +1141,107 @@ async def get_events(limit: int = Query(50, ge=1, le=200)) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Failed to get events: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/health-status")
+async def get_health_status() -> Dict[str, Any]:
+    """Get health status of all monitored services"""
+    try:
+        # Import here to avoid circular imports
+        from app.main import get_health_checker, get_notification_service
+
+        health_checker = get_health_checker()
+        notification_service = get_notification_service()
+
+        if health_checker is None:
+            return {
+                'summary': {'total': 0, 'up': 0, 'down': 0, 'degraded': 0, 'unknown': 0},
+                'services': {},
+                'enabled': False,
+                'message': 'Health checker not initialized'
+            }
+
+        health_data = health_checker.get_health_status()
+
+        # Add notification service status
+        health_data['notifications'] = notification_service.get_status() if notification_service else {'enabled': False}
+
+        return health_data
+
+    except Exception as e:
+        logger.error(f"Failed to get health status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/health-check/{service_name}")
+async def trigger_health_check(service_name: str) -> Dict[str, Any]:
+    """Trigger an immediate health check for a specific service"""
+    try:
+        from app.main import get_health_checker
+
+        health_checker = get_health_checker()
+        if health_checker is None:
+            raise HTTPException(status_code=503, detail="Health checker not initialized")
+
+        await health_checker.check_now(service_name)
+
+        health = health_checker.get_service_health(service_name)
+        if health is None:
+            raise HTTPException(status_code=404, detail=f"Service {service_name} not found")
+
+        return health
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to trigger health check: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/notifications/status")
+async def get_notifications_status() -> Dict[str, Any]:
+    """Get notification service status"""
+    try:
+        from app.main import get_notification_service
+
+        notification_service = get_notification_service()
+        if notification_service is None:
+            return {'enabled': False, 'message': 'Notification service not initialized'}
+
+        return notification_service.get_status()
+
+    except Exception as e:
+        logger.error(f"Failed to get notifications status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/notifications/test")
+async def test_notification() -> Dict[str, Any]:
+    """Send a test notification"""
+    try:
+        from app.main import get_notification_service
+
+        notification_service = get_notification_service()
+        if notification_service is None:
+            raise HTTPException(status_code=503, detail="Notification service not initialized")
+
+        if not notification_service.enabled:
+            raise HTTPException(status_code=503, detail="Notifications are disabled")
+
+        success = await notification_service.send_notification(
+            title="Test Notification",
+            message="This is a test notification from Traefik HTTP Provider",
+            priority=3
+        )
+
+        return {
+            'success': success,
+            'message': 'Test notification sent' if success else 'Failed to send notification'
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to send test notification: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

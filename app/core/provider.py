@@ -309,6 +309,12 @@ class TraefikProvider:
                 insecure_skip_verify = route.get('insecure-skip-verify', False)
                 description = route.get('description', '')
 
+                # Health and monitoring configuration
+                health_path = route.get('health', None)
+                info_path = route.get('info', None)
+                notify_enabled = route.get('notify', True)
+                notify_priority = route.get('notify-priority', 5)
+
                 static_route = {
                     'domain': domain,
                     'target': target,
@@ -316,12 +322,18 @@ class TraefikProvider:
                     'redirect_https': redirect_https,
                     'insecure_skip_verify': insecure_skip_verify,
                     'description': description,
-                    'type': 'static'
+                    'type': 'static',
+                    'health_path': health_path,
+                    'info_path': info_path,
+                    'notify_enabled': notify_enabled,
+                    'notify_priority': notify_priority
                 }
 
                 static_routes.append(static_route)
                 logger.info(f"  [{idx}] {domain} -> {target}")
                 logger.info(f"      https={https_enabled}, redirect_https={redirect_https}, insecure_skip_verify={insecure_skip_verify}")
+                if health_path:
+                    logger.info(f"      Health: {health_path}")
                 if description:
                     logger.info(f"      Description: {description}")
 
@@ -420,6 +432,12 @@ class TraefikProvider:
             service_name = f"{container_name}-{internal_port}"
             service_url = f"{backend_proto}://{resolved_hostname}:{backend_port}/"
 
+            # Health and monitoring configuration
+            health_path = config.get('health', None)  # e.g., /health, /api/ping
+            info_path = config.get('info', None)  # e.g., /api/status, /api/system/status
+            notify_enabled = config.get('notify', 'true').lower() == 'true'
+            notify_priority = int(config.get('notify-priority', '5'))
+
             revp_config['services'][service_name] = {
                 'domains': domains,  # List of domain names (backward compat)
                 'domains_with_redirect': domains_with_redirect,  # List of {domain, redirect} dicts
@@ -428,7 +446,11 @@ class TraefikProvider:
                 'external_port': external_port,
                 'https_enabled': https_enabled,
                 'redirect_https': redirect_https,
-                'cert_resolver': cert_resolver
+                'cert_resolver': cert_resolver,
+                'health_path': health_path,
+                'info_path': info_path,
+                'notify_enabled': notify_enabled,
+                'notify_priority': notify_priority
             }
 
         return revp_config

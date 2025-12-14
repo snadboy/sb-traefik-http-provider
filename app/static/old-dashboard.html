@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traefik HTTP Provider Dashboard</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1>🚀 Traefik HTTP Provider</h1>
+                <div class="header-controls">
+                    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
+                        <span class="theme-icon">🌙</span>
+                    </button>
+                    <div class="status-indicator">
+                        <span class="status-dot" id="status-dot"></span>
+                        <span id="status-text">Connecting...</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab-button active" data-tab="services">Services</button>
+            <button class="tab-button" data-tab="containers">Containers</button>
+            <button class="tab-button" data-tab="events">Events</button>
+            <button class="tab-button" data-tab="hosts">Hosts</button>
+        </nav>
+
+        <main class="content">
+            <!-- Services Tab -->
+            <div id="services-tab" class="tab-content active">
+                <div class="tab-header">
+                    <h2>Services</h2>
+                    <div class="tab-actions">
+                        <input type="search" id="services-search" placeholder="Search services..." class="search-input">
+                        <button id="refresh-services" class="btn-refresh">↻ Refresh</button>
+                    </div>
+                </div>
+                <div id="services-content" class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading services...</p>
+                </div>
+            </div>
+
+            <!-- Containers Tab -->
+            <div id="containers-tab" class="tab-content">
+                <div class="tab-header">
+                    <h2>Containers by Host</h2>
+                    <div class="tab-actions">
+                        <input type="search" id="containers-search" placeholder="Search containers..." class="search-input">
+                        <button id="refresh-containers" class="btn-refresh">↻ Refresh</button>
+                    </div>
+                </div>
+                <div id="containers-content" class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading containers...</p>
+                </div>
+            </div>
+
+            <!-- Events Tab -->
+            <div id="events-tab" class="tab-content">
+                <div class="tab-header">
+                    <h2>Recent Events</h2>
+                    <div class="tab-actions">
+                        <button id="refresh-events" class="btn-refresh">↻ Refresh</button>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="auto-refresh-events">
+                            Auto-refresh (5s)
+                        </label>
+                    </div>
+                </div>
+                <div id="events-content" class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading events...</p>
+                </div>
+            </div>
+
+            <!-- Hosts Tab -->
+            <div id="hosts-tab" class="tab-content">
+                <div class="tab-header">
+                    <h2>SSH Hosts</h2>
+                    <div class="tab-actions">
+                        <button id="refresh-hosts" class="btn-refresh">↻ Refresh</button>
+                    </div>
+                </div>
+                <div id="hosts-content" class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading host status...</p>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Last updated: <span id="last-update">Never</span></p>
+        </footer>
+    </div>
+
+    <script src="/js/theme.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>

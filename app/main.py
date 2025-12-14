@@ -13,6 +13,69 @@ from app.api.routes import router, get_provider
 from app.utils.logging_config import initialize_logging, get_logger
 from app.utils.ssh_setup import initialize_ssh_known_hosts
 from app.utils.dns_health import perform_dns_health_check
+from app.core.health_checker import HealthChecker
+from app.core.notifications import NotificationService
+
+# Global instances for health checker and notifications
+health_checker: HealthChecker = None
+notification_service: NotificationService = None
+
+
+def get_health_checker() -> HealthChecker:
+    """Get the global health checker instance"""
+    global health_checker
+    return health_checker
+
+
+def get_notification_service() -> NotificationService:
+    """Get the global notification service instance"""
+    global notification_service
+    return notification_service
+
+
+def _build_health_services_list(provider) -> list:
+    """Build list of services to monitor from provider data"""
+    services = []
+
+    # Get container services from provider's last processed data
+    for container_data in provider.last_processed_containers:
+        details = container_data.get('details', {})
+        labels = details.get('Config', {}).get('Labels', {}) or {}
+
+        # Look for health path in labels
+        for key, value in labels.items():
+            if key.startswith('snadboy.revp.') and key.endswith('.health'):
+                # Extract port from label key
+                port = key.split('.')[2]
+                domain_key = f"snadboy.revp.{port}.domain"
+                domain = labels.get(domain_key)
+
+                if domain and value:
+                    # Get the first domain if comma-separated
+                    primary_domain = domain.split(',')[0].strip().split(':')[0]
+                    # Build health URL using the public domain
+                    health_url = f"https://{primary_domain}{value}"
+                    services.append({
+                        'name': primary_domain,
+                        'health_url': health_url,
+                        'type': 'container'
+                    })
+
+    # Get static routes with health paths
+    static_routes = provider._load_static_routes()
+    for route in static_routes:
+        if route.get('health_path'):
+            # For static routes, hit the backend directly (internal)
+            target = route['target'].rstrip('/')
+            health_url = f"{target}{route['health_path']}"
+            services.append({
+                'name': route['domain'],
+                'health_url': health_url,
+                'type': 'static'
+            })
+
+    return services
+
 
 # Initialize logging
 logging_config = {
@@ -82,10 +145,43 @@ async def lifespan(app: FastAPI):
     await provider.start_event_listeners()
     logger.info("Event listeners started successfully")
 
+    # Initialize notification service
+    global notification_service
+    notification_service = NotificationService()
+    logger.info(f"Notification service initialized (enabled: {notification_service.enabled})")
+
+    # Initialize health checker
+    global health_checker
+    health_check_interval = int(os.getenv('HEALTH_CHECK_INTERVAL', '60'))
+    health_checker = HealthChecker(check_interval=health_check_interval)
+
+    # Register notification callback for health status changes
+    if notification_service.enabled:
+        health_checker.register_status_change_callback(
+            lambda name, health, old_status: notification_service.notify_health_change(
+                name, health, old_status,
+                notify_priority=5  # Default, will be overridden per-service
+            )
+        )
+
+    # Build list of services to monitor from initial config
+    services_to_monitor = _build_health_services_list(provider)
+    health_checker.update_services(services_to_monitor)
+
+    # Start health checker
+    await health_checker.start()
+    logger.info(f"Health checker started (interval: {health_check_interval}s, services: {len(services_to_monitor)})")
+
     yield
 
     # Shutdown
     logger.info("FastAPI application shutting down")
+
+    # Stop health checker
+    if health_checker:
+        await health_checker.stop()
+        logger.info("Health checker stopped")
+
     await provider.stop_event_listeners()
     logger.info("Event listeners stopped")
 

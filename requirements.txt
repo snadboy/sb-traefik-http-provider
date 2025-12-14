@@ -6,6 +6,7 @@ pydantic>=2.0.0
 pyyaml>=6.0
 asyncio>=3.4.3
 dnspython>=2.4.0  # DNS health checks
+aiohttp>=3.9.0  # Health checks and notifications
 
 # Optional dependencies for enhanced functionality
 prometheus-client>=0.19.0  # Metrics support
