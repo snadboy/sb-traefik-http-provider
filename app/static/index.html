@@ -3,104 +3,593 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Traefik HTTP Provider Dashboard</title>
-    <link rel="stylesheet" href="/css/styles.css">
+    <title>Home</title>
+    <style>
+        :root {
+            --transition-speed: 0.3s;
+        }
+
+        /* Light theme (default) */
+        [data-theme="light"] {
+            --bg-primary: #f5f5f7;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f5f5f7;
+            --text-primary: #1d1d1f;
+            --text-secondary: #6e6e73;
+            --border: #d2d2d7;
+            --shadow: rgba(0, 0, 0, 0.1);
+            --shadow-hover: rgba(0, 0, 0, 0.15);
+            --accent: #0071e3;
+            --accent-hover: #0077ed;
+        }
+
+        /* Dark theme */
+        [data-theme="dark"] {
+            --bg-primary: #000000;
+            --bg-secondary: #1d1d1f;
+            --bg-card: #1d1d1f;
+            --bg-card-hover: #2d2d2f;
+            --text-primary: #f5f5f7;
+            --text-secondary: #a1a1a6;
+            --border: #424245;
+            --shadow: rgba(0, 0, 0, 0.3);
+            --shadow-hover: rgba(0, 0, 0, 0.5);
+            --accent: #2997ff;
+            --accent-hover: #409cff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            height: 100%;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+            transition: background var(--transition-speed), color var(--transition-speed);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .theme-switcher {
+            display: flex;
+            gap: 4px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 4px;
+            box-shadow: 0 2px 8px var(--shadow);
+        }
+
+        .theme-btn {
+            background: transparent;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 14px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .theme-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .theme-btn.active {
+            background: var(--accent);
+            color: white;
+        }
+
+        .dashboard-link {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 10px 20px;
+            border-radius: 12px;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            box-shadow: 0 2px 8px var(--shadow);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dashboard-link:hover {
+            background: var(--bg-card-hover);
+            box-shadow: 0 4px 12px var(--shadow-hover);
+            transform: translateY(-1px);
+        }
+
+        .search-container {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto 30px;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 16px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            color: var(--text-primary);
+            font-size: 16px;
+            box-shadow: 0 2px 8px var(--shadow);
+            transition: all 0.2s;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 4px 16px var(--shadow-hover);
+        }
+
+        .search-box::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .container {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            flex: 1;
+        }
+
+        .category {
+            margin-bottom: 40px;
+        }
+
+        .category-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.875rem;
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .service-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            text-decoration: none;
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            transition: all 0.2s;
+            box-shadow: 0 2px 8px var(--shadow);
+            min-height: 120px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .service-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px var(--shadow-hover);
+            background: var(--bg-card-hover);
+            border-color: var(--accent);
+        }
+
+        .service-icon {
+            font-size: 2rem;
+            margin-bottom: 12px;
+        }
+
+        .service-name {
+            font-size: 1rem;
+            font-weight: 500;
+            word-break: break-word;
+        }
+
+        .service-description {
+            font-size: 0.813rem;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+            font-size: 1.125rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            border: 3px solid var(--border);
+            border-top: 3px solid var(--accent);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .services-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            }
+
+            .service-card {
+                padding: 20px;
+                min-height: 100px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .controls {
+                width: 100%;
+                flex-direction: column;
+            }
+
+            .theme-switcher,
+            .dashboard-link {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .services-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Hide category if all services are filtered out */
+        .category.hidden {
+            display: none;
+        }
+    </style>
 </head>
-<body>
-    <div class="container">
-        <header>
-            <div class="header-content">
-                <h1>🚀 Traefik HTTP Provider</h1>
-                <div class="header-controls">
-                    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
-                        <span class="theme-icon">🌙</span>
-                    </button>
-                    <div class="status-indicator">
-                        <span class="status-dot" id="status-dot"></span>
-                        <span id="status-text">Connecting...</span>
-                    </div>
-                </div>
+<body data-theme="light">
+    <div class="header">
+        <h1>Services</h1>
+        <div class="controls">
+            <div class="theme-switcher">
+                <button class="theme-btn" data-theme="light">
+                    <span>☀️</span>
+                    <span>Light</span>
+                </button>
+                <button class="theme-btn active" data-theme="dark">
+                    <span>🌙</span>
+                    <span>Dark</span>
+                </button>
+                <button class="theme-btn" data-theme="system">
+                    <span>💻</span>
+                    <span>System</span>
+                </button>
             </div>
-        </header>
-
-        <nav class="tabs">
-            <button class="tab-button active" data-tab="services">Services</button>
-            <button class="tab-button" data-tab="containers">Containers</button>
-            <button class="tab-button" data-tab="events">Events</button>
-            <button class="tab-button" data-tab="hosts">Hosts</button>
-        </nav>
-
-        <main class="content">
-            <!-- Services Tab -->
-            <div id="services-tab" class="tab-content active">
-                <div class="tab-header">
-                    <h2>Services</h2>
-                    <div class="tab-actions">
-                        <input type="search" id="services-search" placeholder="Search services..." class="search-input">
-                        <button id="refresh-services" class="btn-refresh">↻ Refresh</button>
-                    </div>
-                </div>
-                <div id="services-content" class="loading">
-                    <div class="spinner"></div>
-                    <p>Loading services...</p>
-                </div>
-            </div>
-
-            <!-- Containers Tab -->
-            <div id="containers-tab" class="tab-content">
-                <div class="tab-header">
-                    <h2>Containers by Host</h2>
-                    <div class="tab-actions">
-                        <input type="search" id="containers-search" placeholder="Search containers..." class="search-input">
-                        <button id="refresh-containers" class="btn-refresh">↻ Refresh</button>
-                    </div>
-                </div>
-                <div id="containers-content" class="loading">
-                    <div class="spinner"></div>
-                    <p>Loading containers...</p>
-                </div>
-            </div>
-
-            <!-- Events Tab -->
-            <div id="events-tab" class="tab-content">
-                <div class="tab-header">
-                    <h2>Recent Events</h2>
-                    <div class="tab-actions">
-                        <button id="refresh-events" class="btn-refresh">↻ Refresh</button>
-                        <label class="toggle-label">
-                            <input type="checkbox" id="auto-refresh-events">
-                            Auto-refresh (5s)
-                        </label>
-                    </div>
-                </div>
-                <div id="events-content" class="loading">
-                    <div class="spinner"></div>
-                    <p>Loading events...</p>
-                </div>
-            </div>
-
-            <!-- Hosts Tab -->
-            <div id="hosts-tab" class="tab-content">
-                <div class="tab-header">
-                    <h2>SSH Hosts</h2>
-                    <div class="tab-actions">
-                        <button id="refresh-hosts" class="btn-refresh">↻ Refresh</button>
-                    </div>
-                </div>
-                <div id="hosts-content" class="loading">
-                    <div class="spinner"></div>
-                    <p>Loading host status...</p>
-                </div>
-            </div>
-        </main>
-
-        <footer>
-            <p>Last updated: <span id="last-update">Never</span></p>
-        </footer>
+            <a href="/dashboard.html" class="dashboard-link">
+                <span>📊</span>
+                <span>Dashboard</span>
+            </a>
+        </div>
     </div>
 
-    <script src="/js/theme.js"></script>
-    <script src="/js/api.js"></script>
-    <script src="/js/dashboard.js"></script>
+    <div class="search-container">
+        <input type="text" class="search-box" id="search" placeholder="Search services...">
+    </div>
+
+    <div class="container" id="container">
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading services...</p>
+        </div>
+    </div>
+
+    <script>
+        // Theme Management
+        const themeButtons = document.querySelectorAll('.theme-btn');
+        const body = document.body;
+
+        // Default service icon mapping
+        const serviceIcons = {
+            'sonarr': '📺',
+            'radarr': '🎬',
+            'prowlarr': '🔍',
+            'overseerr': '🎫',
+            'plex': '▶️',
+            'jellyfin': '🎞️',
+            'emby': '📽️',
+            'tautulli': '📊',
+            'bazarr': '💬',
+            'lidarr': '🎵',
+            'readarr': '📚',
+            'qbittorrent': '⬇️',
+            'transmission': '⬇️',
+            'sabnzbd': '📦',
+            'nzbget': '📦',
+            'nginx': '🌐',
+            'traefik': '🔀',
+            'portainer': '🐳',
+            'docker': '🐳',
+            'grafana': '📈',
+            'prometheus': '📊',
+            'influxdb': '💾',
+            'elasticsearch': '🔎',
+            'kibana': '📊',
+            'unifi': '📡',
+            'pihole': '🛡️',
+            'adguard': '🛡️',
+            'home': '🏠',
+            'assistant': '🏠',
+            'homeassistant': '🏠',
+            'proxmox': '💻',
+            'truenas': '💾',
+            'synology': '💾',
+            'nextcloud': '☁️',
+            'bitwarden': '🔐',
+            'vaultwarden': '🔐',
+            'gitlab': '🦊',
+            'gitea': '🐙',
+            'github': '🐙',
+            'jenkins': '🔧',
+            'drone': '🔧',
+            'router': '🌐',
+            'gateway': '🌐',
+            'switch': '🔌',
+            'dns': '🌐',
+            'vpn': '🔒',
+            'wireguard': '🔒',
+            'openvpn': '🔒',
+            'backup': '💾',
+            'mongodb': '🍃',
+            'postgres': '🐘',
+            'mysql': '🐬',
+            'redis': '⚡',
+            'colossus': '💻',
+            'guardian': '💻',
+            'svalbard': '💾',
+            'alexandria': '💾',
+            'ns': '🌐',
+            'ha': '🏠',
+            'default': '🔗'
+        };
+
+        // Category definitions with priority order
+        const categories = {
+            'Media': ['sonarr', 'radarr', 'prowlarr', 'overseerr', 'plex', 'jellyfin', 'emby', 'tautulli', 'bazarr', 'lidarr', 'readarr'],
+            'Downloads': ['qbittorrent', 'transmission', 'sabnzbd', 'nzbget'],
+            'Infrastructure': ['proxmox', 'colossus', 'guardian', 'svalbard', 'alexandria', 'truenas', 'synology', 'portainer', 'docker', 'traefik'],
+            'Network': ['unifi', 'router', 'gateway', 'dns', 'ns', 'vpn', 'wireguard', 'openvpn'],
+            'Monitoring': ['grafana', 'prometheus', 'influxdb', 'elasticsearch', 'kibana', 'uptime'],
+            'Home Automation': ['ha', 'home', 'homeassistant', 'assistant'],
+            'Security': ['bitwarden', 'vaultwarden', 'pihole', 'adguard'],
+            'Development': ['gitlab', 'gitea', 'github', 'jenkins', 'drone'],
+            'Cloud': ['nextcloud', 'backup'],
+            'Other': [] // Catch-all for unmatched services
+        };
+
+        function getServiceIcon(serviceName) {
+            const name = serviceName.toLowerCase();
+            for (const [key, icon] of Object.entries(serviceIcons)) {
+                if (name.includes(key)) {
+                    return icon;
+                }
+            }
+            return serviceIcons.default;
+        }
+
+        function categorizeService(service) {
+            const name = (service.domain || service.name || '').toLowerCase();
+
+            for (const [category, keywords] of Object.entries(categories)) {
+                if (category === 'Other') continue;
+                for (const keyword of keywords) {
+                    if (name.includes(keyword)) {
+                        return category;
+                    }
+                }
+            }
+            return 'Other';
+        }
+
+        function getTheme() {
+            const saved = localStorage.getItem('theme');
+            if (saved) return saved;
+
+            // Default to system preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                return 'dark';
+            }
+            return 'light';
+        }
+
+        function setTheme(theme) {
+            localStorage.setItem('theme', theme);
+
+            let actualTheme = theme;
+            if (theme === 'system') {
+                actualTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+
+            body.setAttribute('data-theme', actualTheme);
+
+            themeButtons.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.theme === theme);
+            });
+        }
+
+        themeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                setTheme(btn.dataset.theme);
+            });
+        });
+
+        // Listen for system theme changes
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+                const currentTheme = localStorage.getItem('theme');
+                if (currentTheme === 'system' || !currentTheme) {
+                    setTheme('system');
+                }
+            });
+        }
+
+        // Initialize theme
+        setTheme(getTheme());
+
+        // Service Management
+        let allServices = [];
+        let searchTerm = '';
+
+        async function fetchServices() {
+            try {
+                const response = await fetch('/api/services');
+                if (!response.ok) throw new Error('Failed to fetch services');
+                const data = await response.json();
+                return data.services || [];
+            } catch (error) {
+                console.error('Error fetching services:', error);
+                return [];
+            }
+        }
+
+        function filterServices(services) {
+            if (!searchTerm) return services;
+
+            return services.filter(service => {
+                const name = (service.domain || service.name || '').toLowerCase();
+                const description = (service.description || '').toLowerCase();
+                const containerName = (service.container_name || '').toLowerCase();
+
+                return name.includes(searchTerm) ||
+                       description.includes(searchTerm) ||
+                       containerName.includes(searchTerm);
+            });
+        }
+
+        function renderServices() {
+            const container = document.getElementById('container');
+            const filtered = filterServices(allServices);
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="no-results">No services found</div>';
+                return;
+            }
+
+            // Group services by category
+            const grouped = {};
+            filtered.forEach(service => {
+                const category = categorizeService(service);
+                if (!grouped[category]) grouped[category] = [];
+                grouped[category].push(service);
+            });
+
+            // Render in category order
+            let html = '';
+            const categoryOrder = Object.keys(categories);
+
+            categoryOrder.forEach(category => {
+                const services = grouped[category];
+                if (!services || services.length === 0) return;
+
+                html += `
+                    <div class="category">
+                        <h2 class="category-title">${category}</h2>
+                        <div class="services-grid">
+                            ${services.map(service => {
+                                const domain = service.domain || service.name;
+                                const url = `https://${domain}`;
+                                const icon = getServiceIcon(domain);
+                                const name = domain.split('.')[0];
+                                const description = service.description || '';
+
+                                return `
+                                    <a href="${url}" target="_blank" class="service-card">
+                                        <div class="service-icon">${icon}</div>
+                                        <div class="service-name">${name}</div>
+                                        ${description ? `<div class="service-description">${description}</div>` : ''}
+                                    </a>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // Search functionality
+        document.getElementById('search').addEventListener('input', (e) => {
+            searchTerm = e.target.value.toLowerCase();
+            renderServices();
+        });
+
+        // Initial load
+        async function init() {
+            allServices = await fetchServices();
+            renderServices();
+        }
+
+        init();
+    </script>
 </body>
 </html>
