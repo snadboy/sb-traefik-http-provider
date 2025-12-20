@@ -437,6 +437,9 @@ class TraefikProvider:
             info_path = config.get('info', None)  # e.g., /api/status, /api/system/status
             notify_enabled = config.get('notify', 'true').lower() == 'true'
             notify_priority = int(config.get('notify-priority', '5'))
+            
+            # Backend TLS configuration (for self-signed certs)
+            insecure_skip_verify = config.get('insecure-skip-verify', 'false').lower() == 'true'
 
             revp_config['services'][service_name] = {
                 'domains': domains,  # List of domain names (backward compat)
@@ -450,7 +453,8 @@ class TraefikProvider:
                 'health_path': health_path,
                 'info_path': info_path,
                 'notify_enabled': notify_enabled,
-                'notify_priority': notify_priority
+                'notify_priority': notify_priority,
+                'insecure_skip_verify': insecure_skip_verify
             }
 
         return revp_config
@@ -561,6 +565,9 @@ class TraefikProvider:
 
         # Track middlewares separately
         middlewares = {}
+        
+        # Track serversTransports for insecure backends (both container and static)
+        servers_transports = {}
 
         for container_data in containers_data:
             container = container_data.get('container', {})
@@ -651,14 +658,29 @@ class TraefikProvider:
 
                     logger.debug(f"    Domains: {', '.join(domains)}")
 
+                    # Get insecure_skip_verify setting
+                    insecure_skip_verify = service_config.get('insecure_skip_verify', False)
+                    logger.debug(f"    InsecureSkipVerify: {insecure_skip_verify}")
+                    
                     # Create service (shared by all routers)
-                    config['http']['services'][service_name] = {
+                    service_def = {
                         'loadBalancer': {
                             'servers': [{
                                 'url': service_config['service_url']
                             }]
                         }
                     }
+                    
+                    # If backend uses HTTPS with self-signed cert, create a serversTransport
+                    if insecure_skip_verify:
+                        transport_name = f"{service_name}-insecure"
+                        servers_transports[transport_name] = {
+                            'insecureSkipVerify': True
+                        }
+                        service_def['loadBalancer']['serversTransport'] = transport_name
+                        logger.debug(f"    Created insecure serversTransport: {transport_name}")
+                    
+                    config['http']['services'][service_name] = service_def
 
                     # Group domains by redirect setting
                     domains_with_redirect_enabled = [d['domain'] for d in domains_with_redirect if d['redirect']]
@@ -711,9 +733,6 @@ class TraefikProvider:
                         source_host,
                         f"Container has {len(labels)} labels total, none with snadboy.revp prefix"
                     )
-
-        # Track serversTransports for insecure backends
-        servers_transports = {}
 
         # Process static routes
         static_routes = self._load_static_routes()
