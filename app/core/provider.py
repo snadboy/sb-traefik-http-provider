@@ -314,6 +314,7 @@ class TraefikProvider:
                 info_path = route.get('info', None)
                 notify_enabled = route.get('notify', True)
                 notify_priority = route.get('notify-priority', 5)
+                pass_host_header = route.get('pass-host-header', True)
 
                 static_route = {
                     'domain': domain,
@@ -326,7 +327,8 @@ class TraefikProvider:
                     'health_path': health_path,
                     'info_path': info_path,
                     'notify_enabled': notify_enabled,
-                    'notify_priority': notify_priority
+                    'notify_priority': notify_priority,
+                    'pass_host_header': pass_host_header
                 }
 
                 static_routes.append(static_route)
@@ -767,6 +769,10 @@ class TraefikProvider:
                 # Link the service to the transport
                 service_config['loadBalancer']['serversTransport'] = transport_name
                 logger.debug(f"  Created insecure serversTransport: {transport_name}")
+
+            # If pass-host-header is false, use backend hostname instead of original Host
+            if not static_route.get('pass_host_header', True):
+                service_config['loadBalancer']['passHostHeader'] = False
 
             config['http']['services'][service_name] = service_config
 

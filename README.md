@@ -139,6 +139,7 @@ static_routes:
 | `https` | `true` | Enable HTTPS on frontend |
 | `redirect-https` | `true` | Redirect HTTP to HTTPS |
 | `insecure-skip-verify` | `false` | Skip TLS verification for self-signed backend certs |
+| `pass-host-header` | `true` | Pass original Host header to backend. Set to `false` to send backend's own hostname (useful for external services that validate the Host header) |
 
 ## HTTPS Configuration
 

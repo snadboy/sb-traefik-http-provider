@@ -24,3 +24,10 @@ static_routes:
   - domain: grafana.example.com
     target: https://192.168.1.50:3000/grafana
     description: "Grafana Dashboard"
+
+  # Example: External service (use backend's hostname as Host header)
+  - domain: backup.example.com
+    target: https://sh01.cloud-provider.com:8007
+    description: "Cloud Backup Server"
+    insecure-skip-verify: true
+    pass-host-header: false  # Send backend hostname instead of proxy hostname
