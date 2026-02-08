@@ -443,6 +443,9 @@ class TraefikProvider:
             # Backend TLS configuration (for self-signed certs)
             insecure_skip_verify = config.get('insecure-skip-verify', 'false').lower() == 'true'
 
+            # Pass-host-header configuration
+            pass_host_header = config.get('pass-host-header', 'true').lower() == 'true'
+
             revp_config['services'][service_name] = {
                 'domains': domains,  # List of domain names (backward compat)
                 'domains_with_redirect': domains_with_redirect,  # List of {domain, redirect} dicts
@@ -456,6 +459,7 @@ class TraefikProvider:
                 'info_path': info_path,
                 'notify_enabled': notify_enabled,
                 'notify_priority': notify_priority,
+                'pass_host_header': pass_host_header,
                 'insecure_skip_verify': insecure_skip_verify
             }
 
@@ -1269,7 +1273,7 @@ class TraefikProvider:
 
                 # Force a cache refresh
                 logger.info("Periodic cache refresh triggered")
-                await self.get_traefik_config(force_refresh=True)
+                await self.generate_config(force_refresh=True)
                 logger.info("Periodic cache refresh completed")
 
             except asyncio.CancelledError:
