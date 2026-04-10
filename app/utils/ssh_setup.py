@@ -1,6 +1,24 @@
 """
 SSH setup utilities for Tailscale SSH authentication
 Handles SSH known_hosts population for remote Docker hosts
+
+SECURITY NOTE — TAILSCALE DEPENDENCY
+====================================
+This module contains a `refresh_ssh_keys()` function that will REMOVE and
+REPLACE existing known_hosts entries for a host when its key changes
+(e.g. after a VM rebuild or unclean shutdown that regenerates host keys).
+
+This auto-refresh behavior is safe ONLY because this provider is deployed
+on a Tailscale network, where peer identity is already established via
+WireGuard + Tailscale's own node key exchange. The SSH host key check is
+effectively a second layer on top of an already-authenticated transport.
+
+If this provider is ever deployed WITHOUT Tailscale (e.g. on a raw LAN or
+across the public internet), the auto-refresh behavior in `refresh_ssh_keys`
+and the auto-recovery path in `provider.discover_containers` MUST be
+disabled — otherwise a MITM attacker on the network could inject a rogue
+host key and be silently trusted. Search this file for "TAILSCALE-DEPENDENT"
+to find the affected code paths.
 """
 
 import os
@@ -150,6 +168,141 @@ def scan_and_add_ssh_keys(hostname: str, timeout: int = 15, retries: int = 3) ->
         "error": last_error or "Unknown error",
         "message": "Failed to scan SSH keys"
     }
+
+
+def remove_host_keys(hostname: str) -> Dict[str, Any]:
+    """
+    Remove all known_hosts entries for a hostname using `ssh-keygen -R`.
+
+    This is the mechanical step before `refresh_ssh_keys` re-scans and
+    re-adds the current host key. It is a prerequisite for recovering
+    from a `REMOTE HOST IDENTIFICATION HAS CHANGED` error, because SSH
+    will refuse to connect as long as any stale entry remains.
+
+    Args:
+        hostname: The hostname whose known_hosts entries should be removed.
+
+    Returns:
+        Dict with keys: host, status ("success"|"not_present"|"failed"),
+        and an optional error message.
+    """
+    known_hosts_path = "/root/.ssh/known_hosts"
+
+    if not os.path.exists(known_hosts_path):
+        return {
+            "host": hostname,
+            "status": "not_present",
+            "message": "known_hosts file does not exist",
+        }
+
+    try:
+        result = subprocess.run(
+            ["ssh-keygen", "-f", known_hosts_path, "-R", hostname],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        # ssh-keygen exits 0 whether it removed entries or not; the stdout
+        # tells us if something was actually removed.
+        if result.returncode != 0:
+            logger.error(
+                f"ssh-keygen -R failed for {hostname}: {result.stderr.strip()}"
+            )
+            return {
+                "host": hostname,
+                "status": "failed",
+                "error": result.stderr.strip(),
+            }
+
+        removed = "not found" not in (result.stderr or "").lower() and "updated" in (
+            result.stdout or ""
+        ).lower()
+        if removed:
+            logger.info(f"Removed existing known_hosts entries for {hostname}")
+            return {"host": hostname, "status": "success", "removed": True}
+
+        return {"host": hostname, "status": "not_present", "removed": False}
+
+    except subprocess.TimeoutExpired:
+        return {
+            "host": hostname,
+            "status": "failed",
+            "error": "ssh-keygen -R timed out",
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error removing host keys for {hostname}: {e}", exc_info=True)
+        return {"host": hostname, "status": "failed", "error": str(e)}
+
+
+def refresh_ssh_keys(hostname: str, timeout: int = 15, retries: int = 3) -> Dict[str, Any]:
+    """
+    Force-refresh SSH host keys: remove existing known_hosts entries for
+    `hostname`, then rescan with `ssh-keyscan` and append the fresh keys.
+
+    This is the recovery path for `REMOTE HOST IDENTIFICATION HAS CHANGED`
+    errors, which occur whenever a remote host regenerates its SSH host
+    keys — for example after a VM rebuild, an unclean shutdown that
+    corrupts `/etc/ssh/ssh_host_*_key`, or a cloud-init first-boot.
+
+    ⚠️  TAILSCALE-DEPENDENT SECURITY BOUNDARY ⚠️
+    --------------------------------------------
+    Blindly trusting a new host key is equivalent to trust-on-first-use
+    (TOFU) re-applied on every reboot. It is only safe when the SSH
+    transport is already authenticated by another layer — in this
+    deployment, that layer is Tailscale / WireGuard.
+
+    Tailscale guarantees peer identity via its own key exchange, so a
+    rogue host cannot impersonate a known tailnet node even if the SSH
+    host key changes. Without Tailscale, an attacker on the network path
+    could feed us their own host key during the re-scan window and be
+    silently trusted by the next `docker ps` call.
+
+    If this provider is ever moved off of Tailscale, callers must stop
+    calling this function and fall back to manual key management.
+
+    Every successful refresh emits a WARNING-level log entry with the
+    host name so that operators have an audit trail.
+
+    Args:
+        hostname: Hostname whose keys should be refreshed.
+        timeout: Timeout passed through to `ssh-keyscan`.
+        retries: Retry attempts passed through to `ssh-keyscan`.
+
+    Returns:
+        Dict with scan results from `scan_and_add_ssh_keys`, augmented
+        with `removed_previous` indicating whether stale entries were
+        cleared.
+    """
+    logger.warning(
+        f"[SSH AUDIT] Refreshing host keys for '{hostname}'. "
+        "Existing known_hosts entries will be DELETED and replaced with "
+        "freshly-scanned keys. This action is only safe because SSH is "
+        "tunneled over Tailscale — if you are reading this log on a "
+        "non-Tailscale deployment, treat it as a potential MITM attack "
+        "and investigate immediately."
+    )
+
+    remove_result = remove_host_keys(hostname)
+    if remove_result["status"] == "failed":
+        return {
+            "host": hostname,
+            "status": "failed",
+            "error": f"Failed to remove old keys: {remove_result.get('error')}",
+            "removed_previous": False,
+        }
+
+    scan_result = scan_and_add_ssh_keys(hostname, timeout=timeout, retries=retries)
+    scan_result["removed_previous"] = remove_result.get("removed", False)
+
+    if scan_result["status"] == "success":
+        logger.warning(
+            f"[SSH AUDIT] Host key refresh complete for '{hostname}' — "
+            f"{scan_result.get('keys_added', 0)} new keys installed. "
+            "If you did not expect a VM rebuild/reinstall for this host, "
+            "audit it now."
+        )
+
+    return scan_result
 
 
 def get_enabled_hosts_from_config(config_path: str = "/app/config/ssh-hosts.yaml") -> List[str]:

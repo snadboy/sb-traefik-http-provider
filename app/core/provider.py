@@ -249,16 +249,69 @@ class TraefikProvider:
             return containers
         except Exception as e:
             error_msg = str(e)
+
+            # Auto-recovery for "Host key verification failed" / "REMOTE HOST
+            # IDENTIFICATION HAS CHANGED". This happens whenever a remote host
+            # regenerates its SSH host keys (VM rebuild, unclean shutdown that
+            # corrupts /etc/ssh/ssh_host_*_key, cloud-init first-boot, etc).
+            #
+            # ⚠️  TAILSCALE-DEPENDENT SECURITY BOUNDARY ⚠️
+            # See the module docstring of app/utils/ssh_setup.py for the full
+            # rationale. Blindly re-trusting a new host key is only safe here
+            # because SSH is tunneled through Tailscale, which already
+            # authenticates the peer via its own node keys. If this provider
+            # is ever moved off of Tailscale, DELETE the auto-recovery block
+            # below and require manual `ssh-keygen -R` + `/api/ssh/refresh-keys`
+            # intervention instead.
+            host_key_changed = (
+                "Host key verification failed" in error_msg
+                or "REMOTE HOST IDENTIFICATION HAS CHANGED" in error_msg
+            )
+            if host_key_changed:
+                logger.warning(
+                    f"[SSH AUDIT] Host key mismatch detected for '{target_host}'. "
+                    "Attempting auto-recovery via refresh_ssh_keys(). This is "
+                    "safe because the transport is Tailscale-authenticated — "
+                    "review this log if the deployment has changed."
+                )
+                # Lazy import to avoid a circular dependency at module load
+                from app.utils.ssh_setup import refresh_ssh_keys
+
+                refresh_result = refresh_ssh_keys(target_host)
+                if refresh_result.get("status") == "success":
+                    logger.warning(
+                        f"[SSH AUDIT] Host key refreshed for '{target_host}' "
+                        f"(removed_previous={refresh_result.get('removed_previous')}, "
+                        f"keys_added={refresh_result.get('keys_added', 0)}). "
+                        "Retrying container discovery."
+                    )
+                    try:
+                        containers = await self.ssh_client.list_containers(
+                            host=target_host,
+                            filters={"STATUS": "running"}
+                        )
+                        logger.info(
+                            f"Auto-recovery succeeded: discovered "
+                            f"{len(containers)} running containers on {target_host}"
+                        )
+                        return containers
+                    except Exception as retry_e:
+                        logger.error(
+                            f"Retry after host key refresh failed for "
+                            f"{target_host}: {retry_e}"
+                        )
+                        return []
+                else:
+                    logger.error(
+                        f"Host key refresh failed for {target_host}: "
+                        f"{refresh_result.get('error')}"
+                    )
+                    return []
+
             logger.error(f"Failed to discover containers on {target_host}: {error_msg}")
 
             # Provide more detailed error information for common SSH issues
-            if "Host key verification failed" in error_msg:
-                logger.error(f"SSH host key verification failed for '{target_host}'")
-                logger.error("Possible solutions:")
-                logger.error("1. Run: ssh-keyscan -H {target_host} >> ~/.ssh/known_hosts")
-                logger.error("2. Check if Tailscale is running and SSH is enabled")
-                logger.error("3. Verify the hostname is correct in ssh-hosts.yaml")
-            elif "Connection refused" in error_msg:
+            if "Connection refused" in error_msg:
                 logger.error(f"SSH connection refused by '{target_host}'")
                 logger.error("Ensure SSH is enabled on the target host")
             elif "No route to host" in error_msg or "Name or service not known" in error_msg:

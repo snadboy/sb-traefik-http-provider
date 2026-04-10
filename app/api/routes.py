@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query, HTTPException
 from app.core import TraefikProvider
-from app.utils.ssh_setup import scan_and_add_ssh_keys
+from app.utils.ssh_setup import scan_and_add_ssh_keys, refresh_ssh_keys
 from app.utils.dns_health import perform_dns_health_check
 from app.models import (
     HealthResponse,
@@ -620,6 +620,41 @@ async def scan_ssh_keys(host: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Failed to scan SSH keys: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/ssh/refresh-keys/{host}")
+async def refresh_host_keys(host: str) -> Dict[str, Any]:
+    """
+    Force-refresh SSH host keys for a host.
+
+    Removes any existing known_hosts entries for the host, then re-scans
+    and installs the current keys. Use this after a VM rebuild or
+    whenever `/api/ssh/scan-keys` is not enough because a stale key is
+    blocking the connection.
+
+    ⚠️  TAILSCALE-DEPENDENT: This endpoint blindly trusts whatever host
+    key is currently presented by the target. It is only safe because
+    SSH is tunneled through Tailscale. See app/utils/ssh_setup.py for
+    the full rationale. Every refresh emits a WARNING-level log entry
+    for audit.
+    """
+    logger.warning(
+        f"[SSH AUDIT] /api/ssh/refresh-keys/{host} invoked — force-refreshing "
+        "host keys (Tailscale-authenticated path)."
+    )
+
+    try:
+        provider = get_provider()
+        hostname = provider._get_ssh_hostname(host)
+
+        result = refresh_ssh_keys(hostname, timeout=15, retries=3)
+        result["host"] = host
+        result["hostname"] = hostname
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to refresh SSH keys: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
