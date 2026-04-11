@@ -47,3 +47,8 @@ static_routes:
     description: UniFi Network Controller
     https: true
     redirect-https: true
+  - domain: pkdb.isnadboy.com
+    target: http://host-sdevs.isnadboy.com:8484
+    description: PKDB Dashboard & Document Server
+    https: true
+    redirect-https: true
