@@ -47,6 +47,11 @@ static_routes:
     description: UniFi Network Controller
     https: true
     redirect-https: true
+  - domain: plex.isnadboy.com
+    target: http://host-plex.isnadboy.com:32400
+    description: Plex Media Server
+    https: true
+    redirect-https: true
   - domain: pkdb.isnadboy.com
     target: http://host-sdevs.isnadboy.com:8484
     description: PKDB Dashboard & Document Server

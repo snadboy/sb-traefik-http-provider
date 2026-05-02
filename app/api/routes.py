@@ -336,6 +336,125 @@ async def list_containers(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+def _coerce_container_dict(c: dict, default_host: str) -> ContainerInfo:
+    """Convert a raw `docker ps` dict (as returned by SSHDockerClient.list_containers)
+    into a ContainerInfo model. Used by both /api/containers and /api/containers/all
+    to stay consistent in the wire shape."""
+    labels = c.get("Labels", {})
+    if isinstance(labels, str):
+        labels_dict: Dict[str, str] = {}
+        if labels:
+            for label_pair in labels.split(","):
+                if "=" in label_pair:
+                    key, value = label_pair.split("=", 1)
+                    labels_dict[key.strip()] = value.strip()
+        labels = labels_dict
+    elif not isinstance(labels, dict):
+        labels = {}
+
+    ports = c.get("Ports", [])
+    if isinstance(ports, str):
+        ports_list = []
+        if ports:
+            for entry in ports.split(", "):
+                ports_list.append({"port_mapping": entry.strip()})
+        ports = ports_list
+    elif not isinstance(ports, list):
+        ports = []
+
+    networks = c.get("Networks", {})
+    if isinstance(networks, dict):
+        networks = list(networks.keys())
+    elif isinstance(networks, str):
+        networks = [networks] if networks else []
+    elif not isinstance(networks, list):
+        networks = []
+
+    return ContainerInfo(
+        ID=c.get("ID", ""),
+        Name=c.get("Names", c.get("Name", "")),
+        Image=c.get("Image", ""),
+        Status=c.get("Status", ""),
+        State=c.get("State", "unknown"),
+        Labels=labels,
+        Networks=networks,
+        Ports=ports,
+        Created=c.get("Created"),
+        host=c.get("_source_host", default_host),
+    )
+
+
+@router.get("/api/containers/all", response_model=ContainerListResponse)
+async def list_all_containers(
+    host: Optional[str] = Query(
+        None, description="Target SSH host to query; default is all enabled hosts"
+    ),
+) -> ContainerListResponse:
+    """
+    Raw container inventory across configured SSH hosts.
+
+    Unlike /api/containers, this endpoint:
+      * includes stopped containers (`docker ps -a`)
+      * does NOT filter by snadboy.revp.* labels (returns everything Docker knows)
+      * does NOT run the Traefik routing pipeline
+
+    Intended for monitoring/inventory tools (e.g. container-watchdog) that need
+    to know about every container that has ever been deployed, not just the
+    subset reverse-proxied through Traefik.
+    """
+    logger.info(f"Raw container inventory requested for host: {host or 'all_hosts'}")
+
+    try:
+        provider = get_provider()
+        target_hosts = (
+            [host] if host else list(provider._get_enabled_hosts())
+        )
+
+        all_containers: list = []
+        host_errors: list = []
+        for h in target_hosts:
+            try:
+                cs = await provider.ssh_client.list_containers(
+                    host=h, all_containers=True
+                )
+                for c in cs:
+                    c["_source_host"] = h
+                all_containers.extend(cs)
+            except Exception as e:
+                logger.warning(f"Failed to list all containers on {h}: {e}")
+                host_errors.append(f"{h}: {e}")
+                continue
+
+        default_host = (
+            target_hosts[0] if len(target_hosts) == 1 else "unknown"
+        )
+        container_models = [
+            _coerce_container_dict(c, default_host) for c in all_containers
+        ]
+
+        with_labels = sum(
+            1
+            for m in container_models
+            if any(k.startswith("snadboy.revp") for k in m.labels.keys())
+        )
+
+        return ContainerListResponse(
+            containers=container_models,
+            excluded_containers=[],
+            diagnostics=ContainerDiagnostics(
+                total_discovered=len(container_models),
+                with_labels=with_labels,
+                excluded=0,
+                processing_errors=host_errors,
+            ),
+            count=len(container_models),
+            host=host or "all_hosts",
+        )
+    except Exception as e:
+        logger.error(f"Failed to list all containers: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/api/status", response_model=SystemStatusResponse)
 async def get_system_status() -> SystemStatusResponse:
     """
